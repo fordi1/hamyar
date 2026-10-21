@@ -16,7 +16,9 @@
     "scenario": "tsx scripts/local-scenario.ts",
     "mcp": "tsx mcp/server.ts",
     "mcp-smoke": "tsx scripts/mcp-smoke.ts",
-    "web": "tsx web/server.ts"
+    "web": "tsx web/server.ts",
+    "demo": "tsx scripts/demo.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
