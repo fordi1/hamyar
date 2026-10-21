@@ -62,6 +62,33 @@ export async function logsText({ client }: OpsContext, app: string, minutes = 30
   ].join('\n');
 }
 
+// Compact, UI-ready view of a board for the dashboard (the model gets the text instead).
+export function boardSummary(board: Board) {
+  const h = (x: Board['rejected'][number]) => ({
+    id: x.id,
+    title: x.title,
+    status: x.status,
+    category: x.category,
+    confidence: x.confidence,
+    supporting: x.supporting.map((e) => ({ id: e.id, kind: e.kind, summary: e.summary })),
+    contradicting: x.contradicting.map((e) => ({ id: e.id, kind: e.kind, summary: e.summary })),
+  });
+  const p = board.snapshot.probe;
+  return {
+    kind: 'board' as const,
+    app: board.app,
+    verdict: board.verdict,
+    probe: p ? { url: p.url, okRatio: p.okRatio, p95: p.p95 } : undefined,
+    root: board.root ? h(board.root) : undefined,
+    others: [...board.contributing, ...board.symptoms].map(h),
+    inconclusive: board.inconclusive.map(h),
+    rejected: board.rejected.map(h),
+    fixes: board.fixes.map((f) => ({ title: f.title, tier: f.tier, action: f.action, effect: f.effect })),
+    codeHint: board.codeHint,
+    gaps: board.gaps,
+  };
+}
+
 const TOOL_FOR_FIX: Record<string, string> = {
   set_env: 'set_env', restart: 'restart_app', turn_on: 'turn_on_app', resize: 'resize_plan', rollback: 'rollback', redeploy_port: 'deploy',
 };
@@ -87,7 +114,7 @@ export async function diagnoseText(ctx: OpsContext, app: string, opts: { dir?: s
   return { text: out.join('\n'), board };
 }
 
-export async function verifyText(ctx: OpsContext, app: string, path?: string): Promise<{ text: string; passed: boolean }> {
+export async function verifyText(ctx: OpsContext, app: string, path?: string): Promise<{ text: string; passed: boolean; rows: { metric: string; before: string; after: string; target: string; ok: boolean }[] }> {
   const board = ctx.boards.get(app);
   const before = board?.snapshot.probe;
   const target = appUrl(app) + (path ?? (before ? new URL(before.url).pathname : '/'));
@@ -98,7 +125,7 @@ export async function verifyText(ctx: OpsContext, app: string, path?: string): P
     ...result.rows.map((r) => `| ${r.metric} | ${r.before} | ${r.after} | ${r.target} | ${r.ok ? '✅' : '❌'} |`),
     result.passed ? 'برای گزارش کامل: incident_report' : 'diagnose را دوباره اجرا کن یا راه‌حل بعدی را امتحان کن (یا rollback).',
   ].join('\n');
-  return { text, passed: result.passed };
+  return { text, passed: result.passed, rows: result.rows };
 }
 
 const DOMAIN_STEPS = (domain: string, app: string) => [

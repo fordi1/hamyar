@@ -3,107 +3,149 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>همیار لیارا</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#181818">
+  <title>همیار</title>
+  <link rel="preload" href="/fonts/Vazirmatn-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232f6fed'/><path d='M9 17l5 5 9-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%23181818'/><path d='M9 17.5l4.5 4.5L23 11' stroke='%2387fcc4' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#87fcc4"/><stop offset="1" stop-color="#28c1f5"/></linearGradient>
+    </defs>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h12M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.4v.1"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 5v4h-4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-3 7.6-7 9-4-1.4-7-4.8-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M16 12.5h2M3 9.5h18"/></symbol>
+    <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M14 4c3.5 0 6 2.5 6 6-1.8 3.8-5 6.5-8.5 8L9 15.5C10.5 12 13.2 8.8 17 7"/><path d="M9 15.5L6 16l-1 3 3-1 .5-3M14.5 9.5h.01"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="12" rx="5"/><path d="M12 8V5M9 5l1.5 2M15 5l-1.5 2M3 13h4M17 13h4M4 19l3-2M20 19l-3-2"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l2.5 2.5M14.5 8.5L17 11"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+    <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.5-1-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2-.5-2.5-1.5M12 6.5V8M12 16v1.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  </svg>
+
   <header class="topbar">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">✓</span>
-      <div>
-        <strong>همیار</strong>
-        <small>دستیار دیپلوی و پایش لیارا</small>
-      </div>
-    </div>
-    <div class="toolbar">
-      <label class="field app-field">
+    <a class="brand" href="/" aria-label="همیار">
+      <span class="mark" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+      <span class="brand-name">همیار</span>
+    </a>
+    <div class="bar-controls">
+      <label class="app-switch">
         <span class="sr-only">برنامه</span>
-        <select id="app-select" aria-label="انتخاب برنامه"></select>
+        <span class="switch-dot" id="switch-dot" data-state="unknown" aria-hidden="true"></span>
+        <span class="switch-label" id="switch-label" data-state="unknown">وضعیت نامشخص</span>
+        <svg class="ico hide-sm" aria-hidden="true"><use href="#i-server"/></svg>
+        <select id="app-select" aria-label="انتخاب برنامه"><option value="">در حال بارگذاری…</option></select>
+        <svg class="ico chev" aria-hidden="true"><use href="#i-down"/></svg>
       </label>
-      <span class="badge" id="mode-badge" title="حالت ایمنی">بازبینی</span>
-      <span class="badge muted" id="balance-badge" title="موجودی حساب لیارا">—</span>
+      <span class="pill" id="health-pill" data-state="unknown"><span class="dot"></span><span id="health-text">بدون برنامه</span></span>
+      <span class="chip hide-sm" id="balance-chip" title="موجودی حساب لیارا"><svg class="ico"><use href="#i-wallet"/></svg><span id="balance-text">—</span></span>
+      <span class="chip hide-sm" id="mode-chip"><svg class="ico"><use href="#i-shield"/></svg><span id="mode-text">بازبینی</span></span>
     </div>
-    <button class="btn danger stop" id="stop-btn" type="button" title="لغو همه‌ی تأییدهای در انتظار">⏹ توقف</button>
+    <button class="btn stop" id="stop-btn" type="button" title="لغو همه‌ی تأییدهای در انتظار و توقف عملیات" aria-label="توقف همه‌ی عملیات">
+      <svg class="ico"><use href="#i-stop"/></svg><span>توقف</span>
+    </button>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="بخش‌ها">
-    <button role="tab" class="tab active" data-tab="chat" aria-selected="true">گفت‌وگو</button>
-    <button role="tab" class="tab" data-tab="status" aria-selected="false">وضعیت</button>
-  </nav>
-
-  <div id="alert" class="alert" hidden>
-    <span id="alert-text"></span>
-    <button class="btn small" id="alert-btn" type="button">بررسی کن</button>
+  <div class="segmented" role="tablist" aria-label="بخش‌ها">
+    <button role="tab" class="seg active" data-tab="chat" aria-selected="true">گفت‌وگو</button>
+    <button role="tab" class="seg" data-tab="status" aria-selected="false">وضعیت برنامه</button>
   </div>
 
   <main class="layout">
-    <section class="panel chat-panel active" id="panel-chat" aria-label="گفت‌وگو">
-      <div class="messages" id="messages" aria-live="polite">
-        <div class="msg assistant intro">
-          سلام! من همیار هستم. می‌توانم پروژه‌تان را روی لیارا بالا بیاورم، نسخه‌ی جدید منتشر کنم، و اگر سایت کند شد یا خطا داد، مثل یک مهندس SRE علتش را پیدا کنم.
-          <br>هر تغییری قبل از اجرا با <b>کارت تأیید</b> از شما اجازه می‌گیرد.
+    <section class="conversation active is-empty" id="panel-chat" aria-label="گفت‌وگو با همیار">
+      <div class="alert" id="alert" hidden role="alert">
+        <svg class="ico"><use href="#i-alert"/></svg>
+        <span id="alert-text"></span>
+        <button class="btn small" id="alert-btn" type="button">بررسی کن</button>
+      </div>
+
+      <div class="thread" id="messages" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <h1>امروز چه کاری برای برنامه‌تان انجام دهم؟</h1>
+          <p>پروژه را روی لیارا بالا می‌آورم، نسخه‌ی جدید منتشر می‌کنم، و اگر سایت کند شد یا خطا داد علتش را با شاهد پیدا می‌کنم. هر تغییری اول از شما اجازه می‌گیرد.</p>
+          <div class="tiles" id="tiles">
+            <button class="tile" type="button" data-prompt="پوشه‌ی demo-app رو روی لیارا بالا بیار" data-quick="liara_overview">
+              <svg class="ico"><use href="#i-rocket"/></svg><span><b>دیپلوی پروژه</b><small>از پوشه تا آدرس زنده</small></span>
+            </button>
+            <button class="tile" type="button" data-prompt="سایتم کند شده، بررسی کن چرا." data-quick="diagnose">
+              <svg class="ico"><use href="#i-pulse"/></svg><span><b>سایت کند شده</b><small>پیدا کردن علت با شاهد</small></span>
+            </button>
+            <button class="tile" type="button" data-prompt="سایتم خطای ۵۰۰ می‌دهد، علتش چیست؟" data-quick="diagnose">
+              <svg class="ico"><use href="#i-bug"/></svg><span><b>خطای ۵۰۰</b><small>لاگ، متریک و نسخه‌ها</small></span>
+            </button>
+            <button class="tile" type="button" data-prompt="می‌خوام دامنه‌ام رو به برنامه وصل کنم" data-quick="check_domain">
+              <svg class="ico"><use href="#i-globe"/></svg><span><b>اتصال دامنه</b><small>ایرنیک، DNS و SSL</small></span>
+            </button>
+          </div>
         </div>
       </div>
-      <div class="chips" id="chips">
-        <button class="chip" data-prompt="سایتم کند شده، بررسی کن چرا." data-quick="diagnose">🐢 سایتم کند شده</button>
-        <button class="chip" data-prompt="سایتم خطای ۵۰۰ می‌دهد، علتش چیست؟" data-quick="diagnose">🔥 خطای ۵۰۰</button>
-        <button class="chip" data-prompt="وضعیت برنامه را بگو." data-quick="app_status">📊 وضعیت</button>
-        <button class="chip" data-prompt="لاگ خطاهای اخیر را نشان بده." data-quick="get_logs">📜 لاگ خطاها</button>
-        <button class="chip" data-prompt="گزارش حادثه را آماده کن." data-quick="incident_report">📝 گزارش حادثه</button>
-      </div>
+
       <form class="composer" id="composer">
-        <textarea id="input" rows="1" placeholder="مثلاً: سایتم از صبح کند شده" aria-label="پیام"></textarea>
-        <button class="btn primary" type="submit" id="send-btn">ارسال</button>
+        <textarea id="input" rows="1" placeholder="مثلاً: سایتم از صبح کند شده" aria-label="پیام به همیار"></textarea>
+        <button class="btn primary send" type="submit" id="send-btn" aria-label="ارسال">
+          <svg class="ico"><use href="#i-send"/></svg><span>ارسال</span>
+        </button>
       </form>
     </section>
 
-    <aside class="panel status-panel" id="panel-status" aria-label="وضعیت برنامه">
-      <div class="card" id="status-card">
-        <div class="card-head">
-          <h2>وضعیت برنامه</h2>
-          <button class="btn small ghost" id="refresh-btn" type="button">↻ به‌روزرسانی</button>
+    <aside class="rail" id="panel-status" aria-label="وضعیت برنامه">
+      <section class="card app-card" id="app-card">
+        <div class="empty-rail">
+          <svg class="ico"><use href="#i-server"/></svg>
+          <p>هنوز برنامه‌ای روی لیارا ندارید. از گفت‌وگو بخواهید پروژه‌تان را بالا بیاورم.</p>
         </div>
-        <div id="status-body" class="status-body"><p class="muted">برنامه‌ای انتخاب نشده است.</p></div>
-      </div>
+      </section>
 
-      <div class="card">
-        <div class="card-head">
-          <h2>پایش خودکار</h2>
-          <label class="switch">
-            <input type="checkbox" id="watch-toggle">
-            <span>هر ۳۰ ثانیه</span>
-          </label>
-        </div>
-        <p class="muted small" id="watch-text">وقتی روشن باشد و این صفحه باز باشد، سایت مرتب تست می‌شود و اگر مشکلی پیش بیاید خبر می‌دهد.</p>
-      </div>
+      <section class="card watch">
+        <label class="switch">
+          <input type="checkbox" id="watch-toggle">
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+          <span class="switch-text"><b>پایش خودکار</b><small id="watch-text">خاموش</small></span>
+        </label>
+      </section>
 
-      <div class="card">
-        <div class="card-head"><h2>آخرین عملیات</h2></div>
+      <section class="card">
+        <h2>آخرین عملیات</h2>
         <ol class="timeline" id="timeline"><li class="muted">هنوز عملیاتی انجام نشده.</li></ol>
-      </div>
+      </section>
 
-      <div class="card limits">
-        <div class="card-head"><h2>محدودیت‌ها</h2></div>
-        <ul class="small muted">
-          <li>همیار هرگز برنامه، دیسک، دیتابیس یا دامنه را حذف نمی‌کند.</li>
-          <li>شارژ حساب، خرید دامنه و ثبت رکورد در پنل دامنه (مثل ایرنیک) با خودتان است؛ همیار دقیقاً می‌گوید چه وارد کنید.</li>
-          <li>پایش فقط وقتی این صفحه باز است کار می‌کند (پایش ۲۴ ساعته نیست).</li>
-          <li>علت‌های داخل کد بر اساس لاگ و متریک حدس زده می‌شوند؛ هر ادعا شماره‌ی شاهد دارد تا بتوانید بررسی کنید.</li>
+      <details class="card limits">
+        <summary><span>همیار چه کارهایی نمی‌کند</span><svg class="ico"><use href="#i-down"/></svg></summary>
+        <ul>
+          <li>هرگز برنامه، دیسک، دیتابیس یا دامنه را حذف نمی‌کند.</li>
+          <li>شارژ حساب و ثبت رکورد در پنل دامنه (مثل ایرنیک) با شماست؛ همیار دقیقاً می‌گوید چه وارد کنید و بعد بررسی می‌کند.</li>
+          <li>پایش فقط وقتی این صفحه باز است کار می‌کند.</li>
+          <li>علت‌های داخل کد از روی لاگ و متریک تشخیص داده می‌شوند؛ هر ادعا شماره‌ی شاهد دارد.</li>
         </ul>
-      </div>
+      </details>
     </aside>
   </main>
+
+  <div class="toast" id="toast" role="status" hidden></div>
 
   <div class="login" id="login" hidden>
     <form class="card login-card" id="login-form">
       <h2>ورود به همیار</h2>
       <label class="field"><span>رمز داشبورد</span><input type="password" id="login-password" autocomplete="current-password" required></label>
       <button class="btn primary" type="submit">ورود</button>
-      <p class="error small" id="login-error" hidden></p>
+      <p class="error" id="login-error" hidden></p>
     </form>
   </div>
 

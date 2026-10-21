@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { LiaraClient } from '../core/liara-client.js';
 import { Policy } from '../core/policy.js';
 import type { OpsContext } from '../core/ops.js';
-import { buildTools, openAICompatibleLLM, runAgent, type ApprovalDecision, type ChatMessage, type LLM } from '../core/agent.js';
+import { buildTools, llmFromEnv, runAgent, type ApprovalDecision, type ChatMessage } from '../core/agent.js';
 import { appUrl, probe } from '../core/deployer.js';
 import { normalizeSeries } from '../core/sre/collect.js';
 
@@ -31,18 +31,6 @@ const ctx: OpsContext = {
 };
 const tools = buildTools(ctx);
 
-// Liara AI: an API key + OpenAI-compatible base URL, or the console token on the
-// workspace playground endpoint when only LIARA_AI_WORKSPACE_ID is set.
-function llmFromEnv(): LLM | undefined {
-  const model = process.env.LIARA_AI_MODEL || 'openai/gpt-4.1';
-  if (process.env.LIARA_AI_API_KEY && process.env.LIARA_AI_BASE_URL) {
-    return openAICompatibleLLM({ url: `${process.env.LIARA_AI_BASE_URL.replace(/\/$/, '')}/chat/completions`, apiKey: process.env.LIARA_AI_API_KEY, model });
-  }
-  if (process.env.LIARA_AI_WORKSPACE_ID && process.env.LIARA_API_TOKEN) {
-    return openAICompatibleLLM({ url: `https://ai.liara.ir/api/v1/${process.env.LIARA_AI_WORKSPACE_ID}/playground/chat/completions`, apiKey: process.env.LIARA_API_TOKEN, model });
-  }
-  return undefined;
-}
 const llm = llmFromEnv();
 
 // ---------- sessions, conversations, approvals ----------
@@ -75,7 +63,10 @@ async function body(req: IncomingMessage): Promise<any> {
   return raw ? JSON.parse(raw) : {};
 }
 
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+};
 
 async function serveStatic(req: IncomingMessage, res: ServerResponse) {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
@@ -165,7 +156,8 @@ async function quick(req: IncomingMessage, res: ServerResponse) {
   const t = tools.find((x) => x.name === tool && x.kind === 'read');
   if (!t) return json(res, 400, { error: 'only read-only tools can run directly' });
   try {
-    json(res, 200, { output: await t.run(args ?? {}, { onEvent: () => {}, requestApproval: async () => ({ approved: false }) }) });
+    const result = await t.run(args ?? {}, { onEvent: () => {}, requestApproval: async () => ({ approved: false }) });
+    json(res, 200, typeof result === 'string' ? { output: result } : { output: result.text, data: result.data });
   } catch (err: any) {
     json(res, 200, { error: err?.explanation ?? err?.message ?? String(err) });
   }

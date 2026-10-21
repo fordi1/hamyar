@@ -18,7 +18,8 @@
     "mcp-smoke": "tsx scripts/mcp-smoke.ts",
     "web": "tsx web/server.ts",
     "demo": "tsx scripts/demo.ts",
-    "preflight": "tsx scripts/preflight.ts"
+    "preflight": "tsx scripts/preflight.ts",
+    "chat": "tsx scripts/agent-chat.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

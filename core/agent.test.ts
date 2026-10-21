@@ -100,6 +100,17 @@ describe('runAgent', () => {
     expect(JSON.stringify(seen[1])).not.toContain('hunter2');
   });
 
+  it('sends structured tool data to the UI but only text to the model', async () => {
+    const { ctx } = context();
+    const tool = { name: 'probe_x', description: 'x', parameters: {}, kind: 'read' as const, run: async () => ({ text: 'summary for model', data: { kind: 'board', secretish: 'ui-only' } }) };
+    const { llm, seen } = scriptedLLM([call('probe_x', {}), { content: 'ok' }]);
+    const h = hooks(() => ({ approved: true }));
+    await runAgent({ llm, tools: [...buildTools(ctx), tool], history: [], userMessage: 'x', hooks: h.hooks });
+    expect(seen[1].at(-1)?.content).toBe('summary for model');
+    expect(JSON.stringify(seen)).not.toContain('ui-only');
+    expect(h.events.find((e) => e.type === 'tool' && e.status === 'done')).toMatchObject({ data: { kind: 'board' } });
+  });
+
   it('stops after the step limit', async () => {
     const { ctx } = context();
     const { llm } = scriptedLLM(Array.from({ length: 20 }, (_, i) => call('liara_overview', {}, `c${i}`)));

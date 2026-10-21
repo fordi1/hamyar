@@ -6,3 +6,4 @@ audit.jsonl
 *.tar.gz
 .next/
 dist/
+.impeccable/review/

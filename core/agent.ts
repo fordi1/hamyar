@@ -33,7 +33,7 @@ export interface LLM {
   chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<{ content?: string | null; tool_calls?: ToolCall[] }>;
 }
 
-export function openAICompatibleLLM(opts: { url: string; apiKey: string; model: string; timeoutMs?: number }): LLM {
+export function openAICompatibleLLM(opts: { url: string; apiKey: string; model: string; timeoutMs?: number; provider?: string; reasoningEffort?: string }): LLM {
   return {
     async chat(messages, tools) {
       const res = await fetch(opts.url, {
@@ -42,24 +42,42 @@ export function openAICompatibleLLM(opts: { url: string; apiKey: string; model: 
         body: JSON.stringify({
           model: opts.model,
           messages,
-          tools: tools.map((t) => ({ type: 'function', function: t })),
-          tool_choice: 'auto',
-          temperature: 0.2,
+          ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: t })), tool_choice: 'auto' } : {}),
+          // some reasoning models reject tool calls on chat/completions unless reasoning is off
+          ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : { temperature: 0.2 }),
         }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
       });
       const body: any = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(`Liara AI ${res.status}: ${body?.error?.message ?? body?.message ?? JSON.stringify(body).slice(0, 200)}`);
+      if (!res.ok) throw new Error(`${opts.provider ?? 'AI'} ${res.status}: ${body?.error?.message ?? body?.message ?? JSON.stringify(body).slice(0, 200)}`);
       return body.choices?.[0]?.message ?? { content: '' };
     },
   };
+}
+
+// Model provider from env, first match wins:
+// 1. Liara AI with an API key: LIARA_AI_API_KEY + LIARA_AI_BASE_URL
+// 2. Liara AI with the console token: LIARA_AI_WORKSPACE_ID (+ LIARA_API_TOKEN)
+// 3. any OpenAI-compatible provider: AI_API_KEY + AI_BASE_URL (e.g. https://ai.boxapi.ir/ai/v1)
+export function llmFromEnv(env: NodeJS.ProcessEnv = process.env): (LLM & { provider: string; model: string }) | undefined {
+  const pick = (provider: string, base: string, apiKey: string, model: string) => ({
+    ...openAICompatibleLLM({ url: `${base.replace(/\/$/, '')}/chat/completions`, apiKey, model, provider, reasoningEffort: env.AI_REASONING_EFFORT || undefined }),
+    provider,
+    model,
+  });
+  if (env.LIARA_AI_API_KEY && env.LIARA_AI_BASE_URL) return pick('Liara AI', env.LIARA_AI_BASE_URL, env.LIARA_AI_API_KEY, env.LIARA_AI_MODEL || 'openai/gpt-4.1');
+  if (env.LIARA_AI_WORKSPACE_ID && env.LIARA_API_TOKEN) {
+    return pick('Liara AI', `https://ai.liara.ir/api/v1/${env.LIARA_AI_WORKSPACE_ID}/playground`, env.LIARA_API_TOKEN, env.LIARA_AI_MODEL || 'openai/gpt-4.1');
+  }
+  if (env.AI_API_KEY && env.AI_BASE_URL) return pick(new URL(env.AI_BASE_URL).hostname, env.AI_BASE_URL, env.AI_API_KEY, env.AI_MODEL || 'anthropic/claude-sonnet-5.5');
+  return undefined;
 }
 
 // ---------- events and approvals ----------
 
 export type AgentEvent =
   | { type: 'assistant'; text: string }
-  | { type: 'tool'; name: string; status: 'start' | 'done' | 'error'; args?: Record<string, unknown>; output?: string }
+  | { type: 'tool'; name: string; status: 'start' | 'done' | 'error'; args?: Record<string, unknown>; output?: string; data?: unknown }
   | { type: 'progress'; tool: string; phase: string; message?: string };
 
 export interface ApprovalRequest {
@@ -82,9 +100,12 @@ export interface AgentHooks {
   requestApproval(r: ApprovalRequest): Promise<ApprovalDecision>;
 }
 
+// `data` is structured output for the dashboard only; the model sees `text`.
+export type ToolResult = string | { text: string; data?: unknown };
+
 export interface AgentTool extends ToolSpec {
   kind: 'read' | 'change';
-  run(args: Record<string, any>, hooks: AgentHooks): Promise<string>;
+  run(args: Record<string, any>, hooks: AgentHooks): Promise<ToolResult>;
 }
 
 // ---------- tools ----------
@@ -138,7 +159,7 @@ async function runChange(ctx: OpsContext, tool: string, args: Record<string, any
 }
 
 export function buildTools(ctx: OpsContext): AgentTool[] {
-  const read = (name: string, description: string, parameters: Record<string, unknown>, fn: (a: any) => Promise<string>): AgentTool => ({
+  const read = (name: string, description: string, parameters: Record<string, unknown>, fn: (a: any) => Promise<ToolResult>): AgentTool => ({
     name, description, parameters, kind: 'read', run: (a) => fn(a),
   });
   const change = (name: string, description: string, parameters: Record<string, unknown>): AgentTool => ({
@@ -155,9 +176,15 @@ export function buildTools(ctx: OpsContext): AgentTool[] {
       obj({ app: appParam, minutes: { type: 'number' }, errorsOnly: { type: 'boolean' } }, ['app']), (a) => ops.logsText(ctx, a.app, a.minutes ?? 30, a.errorsOnly ?? false)),
     read('diagnose', 'SRE investigation: logs, events, CPU/RAM, releases and live probe → hypothesis board with root cause, evidence ids and ranked fixes. Use for any "slow", "down", "500", "error" complaint.',
       obj({ app: appParam, path: str('URL path to probe, e.g. /products'), minutes: { type: 'number' } }, ['app']),
-      async (a) => (await ops.diagnoseText(ctx, a.app, { path: a.path, minutes: a.minutes })).text),
+      async (a) => {
+        const { text, board } = await ops.diagnoseText(ctx, a.app, { path: a.path, minutes: a.minutes });
+        return { text, data: ops.boardSummary(board) };
+      }),
     read('verify', 'After a fix: probe the site several times and compare with targets fixed before the change.',
-      obj({ app: appParam, path: str('URL path') }, ['app']), async (a) => (await ops.verifyText(ctx, a.app, a.path)).text),
+      obj({ app: appParam, path: str('URL path') }, ['app']), async (a) => {
+        const { text, passed, rows } = await ops.verifyText(ctx, a.app, a.path);
+        return { text, data: { kind: 'verify', passed, rows } };
+      }),
     read('check_domain', 'Domain setup guide and status: Liara status, Liara DNS, public DNS visibility, exact records or nameservers to set at the registrar (IRNIC), next step. Use for any domain question.',
       obj({ app: appParam, domain: str('Domain, e.g. shop.ir') }, ['app']), (a) => ops.checkDomainText(ctx, a.app, a.domain)),
     read('incident_report', 'Persian postmortem of the last diagnose and the actions since.', obj({ app: appParam }, ['app']), (a) => ops.incidentReportText(ctx, a.app)),
@@ -233,8 +260,10 @@ export async function runAgent(opts: {
         hooks.onEvent({ type: 'tool', name: call.function.name, status: 'error', output });
       } else {
         try {
-          output = await tool.run(args, hooks);
-          hooks.onEvent({ type: 'tool', name: tool.name, status: output.startsWith('❌') ? 'error' : 'done', output });
+          const result = await tool.run(args, hooks);
+          output = typeof result === 'string' ? result : result.text;
+          const data = typeof result === 'string' ? undefined : result.data;
+          hooks.onEvent({ type: 'tool', name: tool.name, status: output.startsWith('❌') ? 'error' : 'done', output, ...(data ? { data } : {}) });
         } catch (err: any) {
           output = `❌ ${err?.explanation ?? err?.message ?? String(err)}`;
           hooks.onEvent({ type: 'tool', name: tool.name, status: 'error', output });

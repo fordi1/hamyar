@@ -4,7 +4,7 @@
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
 import { LiaraClient } from '../core/liara-client.js';
-import { openAICompatibleLLM } from '../core/agent.js';
+import { llmFromEnv } from '../core/agent.js';
 import { appUrl, probe } from '../core/deployer.js';
 
 const app = process.argv[2] ?? 'broken-shop';
@@ -37,17 +37,11 @@ await check('Account balance', async () => {
   return [b > 0 ? true : false, `${Math.round(b).toLocaleString('fa-IR')} تومان${b > 0 ? '' : ' — charge the account'}`];
 });
 
-await check('Liara AI answers', async () => {
-  const model = process.env.LIARA_AI_MODEL || 'openai/gpt-4.1';
-  const url = process.env.LIARA_AI_API_KEY && process.env.LIARA_AI_BASE_URL
-    ? `${process.env.LIARA_AI_BASE_URL.replace(/\/$/, '')}/chat/completions`
-    : process.env.LIARA_AI_WORKSPACE_ID
-      ? `https://ai.liara.ir/api/v1/${process.env.LIARA_AI_WORKSPACE_ID}/playground/chat/completions`
-      : '';
-  if (!url) return [false, 'set LIARA_AI_API_KEY + LIARA_AI_BASE_URL or LIARA_AI_WORKSPACE_ID'];
-  const key = process.env.LIARA_AI_API_KEY || process.env.LIARA_API_TOKEN || '';
-  const reply = await openAICompatibleLLM({ url, apiKey: key, model, timeoutMs: 30_000 }).chat([{ role: 'user', content: 'Reply with the single word: ok' }], []);
-  return [true, `${model} said "${String(reply.content ?? '').trim().slice(0, 20)}"`];
+await check('AI model answers', async () => {
+  const llm = llmFromEnv();
+  if (!llm) return [false, 'set LIARA_AI_API_KEY + LIARA_AI_BASE_URL, LIARA_AI_WORKSPACE_ID, or AI_API_KEY + AI_BASE_URL'];
+  const reply = await llm.chat([{ role: 'user', content: 'Reply with the single word: ok' }], []);
+  return [true, `${llm.provider} · ${llm.model} said "${String(reply.content ?? '').trim().slice(0, 20)}"`];
 });
 
 await check(`App ${app} exists`, async () => {

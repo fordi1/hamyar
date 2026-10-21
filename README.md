@@ -55,6 +55,7 @@ Fill `.env` (never commit it):
 | `LIARA_API_TOKEN` | Liara console → **API** → create key |
 | `LIARA_AI_API_KEY` + `LIARA_AI_BASE_URL` | Liara AI key and `https://ai.liara.ir/api/<workspaceID>/v1` — or only `LIARA_AI_WORKSPACE_ID`, and the console token is used |
 | `LIARA_AI_MODEL` | e.g. `openai/gpt-4.1` |
+| `AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL` | any OpenAI-compatible provider when Liara AI is not set, e.g. `https://ai.boxapi.ir/ai/v1` with `openai/gpt-6-sol` (also set `AI_REASONING_EFFORT=none` for that model) |
 | `HAMYAR_MODE` | `observe`, `review` (default) or `auto-safe` |
 | `HAMYAR_DASHBOARD_PASSWORD` | required when the dashboard runs on a server |
 
@@ -187,8 +188,9 @@ Platform detection, default ports, ignore rules and the release body are ported 
 - Not in Liara's official OpenAPI spec, verified on first real use: rollback
   (`POST /v2/projects/{name}/releases/{id}/rollback`), build logs, DNS record `contents` format.
 - Liara AI's free `base` workspace is documented but rejected by the API (`plan must be one of
-  [standard, pro]`, checked 2026-10-21), so the AI chat needs a charged account. Quick actions
-  (diagnose, status, logs) work without AI.
+  [standard, pro]`, checked 2026-10-21), so Liara AI needs a charged account. Hamyar therefore
+  accepts any OpenAI-compatible provider; the demo runs on boxapi.ir (`openai/gpt-6-sol`). Quick
+  actions (diagnose, status, logs) work without any AI.
 
 ---
 
