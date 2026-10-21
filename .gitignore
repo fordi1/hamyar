@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+audit.jsonl
+*.tar.gz
+.next/
+dist/

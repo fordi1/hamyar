@@ -1,0 +1,17 @@
+{
+  "name": "broken-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo shop for Hamyar with switchable faults",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "load": "node load.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

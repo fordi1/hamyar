@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>همیار لیارا</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232f6fed'/><path d='M9 17l5 5 9-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">✓</span>
+      <div>
+        <strong>همیار</strong>
+        <small>دستیار دیپلوی و پایش لیارا</small>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label class="field app-field">
+        <span class="sr-only">برنامه</span>
+        <select id="app-select" aria-label="انتخاب برنامه"></select>
+      </label>
+      <span class="badge" id="mode-badge" title="حالت ایمنی">بازبینی</span>
+      <span class="badge muted" id="balance-badge" title="موجودی حساب لیارا">—</span>
+    </div>
+    <button class="btn danger stop" id="stop-btn" type="button" title="لغو همه‌ی تأییدهای در انتظار">⏹ توقف</button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="بخش‌ها">
+    <button role="tab" class="tab active" data-tab="chat" aria-selected="true">گفت‌وگو</button>
+    <button role="tab" class="tab" data-tab="status" aria-selected="false">وضعیت</button>
+  </nav>
+
+  <div id="alert" class="alert" hidden>
+    <span id="alert-text"></span>
+    <button class="btn small" id="alert-btn" type="button">بررسی کن</button>
+  </div>
+
+  <main class="layout">
+    <section class="panel chat-panel active" id="panel-chat" aria-label="گفت‌وگو">
+      <div class="messages" id="messages" aria-live="polite">
+        <div class="msg assistant intro">
+          سلام! من همیار هستم. می‌توانم پروژه‌تان را روی لیارا بالا بیاورم، نسخه‌ی جدید منتشر کنم، و اگر سایت کند شد یا خطا داد، مثل یک مهندس SRE علتش را پیدا کنم.
+          <br>هر تغییری قبل از اجرا با <b>کارت تأیید</b> از شما اجازه می‌گیرد.
+        </div>
+      </div>
+      <div class="chips" id="chips">
+        <button class="chip" data-prompt="سایتم کند شده، بررسی کن چرا." data-quick="diagnose">🐢 سایتم کند شده</button>
+        <button class="chip" data-prompt="سایتم خطای ۵۰۰ می‌دهد، علتش چیست؟" data-quick="diagnose">🔥 خطای ۵۰۰</button>
+        <button class="chip" data-prompt="وضعیت برنامه را بگو." data-quick="app_status">📊 وضعیت</button>
+        <button class="chip" data-prompt="لاگ خطاهای اخیر را نشان بده." data-quick="get_logs">📜 لاگ خطاها</button>
+        <button class="chip" data-prompt="گزارش حادثه را آماده کن." data-quick="incident_report">📝 گزارش حادثه</button>
+      </div>
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="مثلاً: سایتم از صبح کند شده" aria-label="پیام"></textarea>
+        <button class="btn primary" type="submit" id="send-btn">ارسال</button>
+      </form>
+    </section>
+
+    <aside class="panel status-panel" id="panel-status" aria-label="وضعیت برنامه">
+      <div class="card" id="status-card">
+        <div class="card-head">
+          <h2>وضعیت برنامه</h2>
+          <button class="btn small ghost" id="refresh-btn" type="button">↻ به‌روزرسانی</button>
+        </div>
+        <div id="status-body" class="status-body"><p class="muted">برنامه‌ای انتخاب نشده است.</p></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>پایش خودکار</h2>
+          <label class="switch">
+            <input type="checkbox" id="watch-toggle">
+            <span>هر ۳۰ ثانیه</span>
+          </label>
+        </div>
+        <p class="muted small" id="watch-text">وقتی روشن باشد و این صفحه باز باشد، سایت مرتب تست می‌شود و اگر مشکلی پیش بیاید خبر می‌دهد.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>آخرین عملیات</h2></div>
+        <ol class="timeline" id="timeline"><li class="muted">هنوز عملیاتی انجام نشده.</li></ol>
+      </div>
+
+      <div class="card limits">
+        <div class="card-head"><h2>محدودیت‌ها</h2></div>
+        <ul class="small muted">
+          <li>همیار هرگز برنامه، دیسک، دیتابیس یا دامنه را حذف نمی‌کند.</li>
+          <li>شارژ حساب، خرید دامنه و ثبت رکورد در پنل دامنه (مثل ایرنیک) با خودتان است؛ همیار دقیقاً می‌گوید چه وارد کنید.</li>
+          <li>پایش فقط وقتی این صفحه باز است کار می‌کند (پایش ۲۴ ساعته نیست).</li>
+          <li>علت‌های داخل کد بر اساس لاگ و متریک حدس زده می‌شوند؛ هر ادعا شماره‌ی شاهد دارد تا بتوانید بررسی کنید.</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+
+  <div class="login" id="login" hidden>
+    <form class="card login-card" id="login-form">
+      <h2>ورود به همیار</h2>
+      <label class="field"><span>رمز داشبورد</span><input type="password" id="login-password" autocomplete="current-password" required></label>
+      <button class="btn primary" type="submit">ورود</button>
+      <p class="error small" id="login-error" hidden></p>
+    </form>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
