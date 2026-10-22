@@ -1,5 +1,6 @@
-// Hamyar dashboard client. Each agent turn renders as a live run card (pipeline of
-// tool steps); diagnose expands into a hypothesis board; changes stop at approval cards.
+// Hamyar dashboard client. Hash routes switch pages inside one shell (side menu, main,
+// status panel). Each agent turn renders as a live run card (pipeline of tool steps);
+// diagnose expands into a hypothesis board; changes stop at approval cards.
 'use strict';
 
 const $ = (sel) => document.querySelector(sel);
@@ -7,6 +8,7 @@ const fa = (n) => Number(n).toLocaleString('fa-IR');
 const pct = (r) => `${fa(Math.round(r * 100))}٪`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const icon = (name, cls = '') => `<svg class="ico ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const mascot = (cls = 'sm') => `<svg class="mascot ${cls}" aria-hidden="true"><use href="#mascot"/></svg>`;
 
 const TOOL_LABELS = {
   liara_overview: 'مرور حساب لیارا', analyze_project: 'تحلیل پروژه', app_status: 'وضعیت برنامه', get_logs: 'خواندن لاگ‌ها',
@@ -107,14 +109,14 @@ const scroll = () => requestAnimationFrame(() => (thread.scrollTop = thread.scro
 function hideWelcome() {
   const w = $('#welcome');
   if (w) w.remove();
-  $('#panel-chat').classList.remove('is-empty');
+  $('[data-page="home"]').classList.remove('is-empty');
 }
 
 function addMessage(role, html) {
   hideWelcome();
   const el = document.createElement('div');
   el.className = `msg ${role}`;
-  el.innerHTML = role === 'assistant' ? `<span class="mark" aria-hidden="true"><svg><use href="#i-check"/></svg></span><div class="body">${html}</div>` : html;
+  el.innerHTML = role === 'assistant' ? `${mascot()}<div class="body">${html}</div>` : html;
   thread.appendChild(el);
   scroll();
   return el;
@@ -169,7 +171,7 @@ function stepStart(name, args) {
   el.innerHTML = `
     <button class="step-row" type="button" aria-expanded="false">
       <span class="state" aria-hidden="true">${fa(run.steps.length + 1)}</span>
-      <span class="step-label"><b>${esc(TOOL_LABELS[name] || name)}</b><small>${esc(argSummary(args))}</small></span>
+      <span class="step-label"><b>${esc(TOOL_LABELS[name] || name)}</b><small><bdi>${esc(argSummary(args))}</bdi></small></span>
       <span class="step-time"></span>
     </button>
     <div class="step-detail"></div>`;
@@ -308,10 +310,11 @@ function verifyView(v) {
 
 // ---------- approval card ----------
 
-function approvalCard(req) {
+// The same card serves the chat thread and the approvals page (`container`).
+function approvalCard(req, container = thread) {
   if (document.querySelector(`.approval[data-id="${req.id}"]`)) return;
   if (openSteps.some((s) => s.name === req.tool)) stepWaiting(req.tool);
-  hideWelcome();
+  if (container === thread) hideWelcome();
   const p = req.preview;
   const el = document.createElement('section');
   el.className = `approval ${req.tier === 'T1' ? 't1' : 't2'}`;
@@ -323,6 +326,7 @@ function approvalCard(req) {
     .join('');
   el.innerHTML = `
     <div class="approval-head">${icon('shield')}<h3>${esc(p.title)}</h3><span class="badge">${req.tier === 'T1' ? 'کم‌خطر' : 'تغییر مهم'}</span></div>
+    <div class="approval-body">
     <ul>${p.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
     <div class="facts">
       ${fact('cost', 'coin', 'هزینه', p.cost)}
@@ -339,7 +343,8 @@ function approvalCard(req) {
       <input class="grow reason" placeholder="چرا؟ (اختیاری؛ همیار راه دیگری پیشنهاد می‌دهد)" aria-label="دلیل رد">
       <button class="btn danger confirm-reject" type="button">ثبت رد</button>
     </div>
-    <div class="result" hidden></div>`;
+    <div class="result" hidden></div>
+    </div>`;
 
   const decide = async (approved, reason) => {
     const values = {};
@@ -357,7 +362,9 @@ function approvalCard(req) {
       return markDecided(el, false, why || 'این درخواست دیگر معتبر نیست.');
     }
     markDecided(el, approved, approved ? 'تأیید شد؛ در حال اجرا' : `رد شد${reason ? `: ${reason}` : ''}`);
-    if (approved) stepRunning(req.tool, 'تأیید شد؛ در حال اجرا');
+    if (approved && openSteps.some((s) => s.name === req.tool)) stepRunning(req.tool, 'تأیید شد؛ در حال اجرا');
+    loadInbox();
+    loadTimeline();
   };
   el.querySelector('.approve').onclick = () => decide(true);
   el.querySelector('.reject').onclick = () => {
@@ -366,9 +373,12 @@ function approvalCard(req) {
   };
   el.querySelector('.confirm-reject').onclick = () => decide(false, el.querySelector('.reason').value.trim());
   el.querySelector('.reason').addEventListener('keydown', (e) => e.key === 'Enter' && el.querySelector('.confirm-reject').click());
-  thread.appendChild(el);
-  scroll();
-  (el.querySelector('input[data-key]') || el.querySelector('.approve')).focus({ preventScroll: true });
+  container.appendChild(el);
+  if (container === thread) {
+    scroll();
+    (el.querySelector('input[data-key]') || el.querySelector('.approve')).focus({ preventScroll: true });
+  }
+  return el;
 }
 
 function markDecided(el, yes, text) {
@@ -450,10 +460,10 @@ async function quick(text, tool) {
   loadTimeline();
 }
 
-// ---------- status rail ----------
+// ---------- status panel ----------
 
 function areaChart(points, limit, color) {
-  if (!points.length) return '<p class="note">داده‌ای هنوز ثبت نشده</p>';
+  if (!points.length) return '<p class="note">لیارا برای این بازه داده‌ای برنگرداند.</p>';
   const w = 300, h = 64, pad = 4;
   const top = Math.max(limit || 0, ...points.map((p) => p.v)) * 1.08 || 1;
   const t0 = points[0].t, t1 = points[points.length - 1].t;
@@ -463,21 +473,23 @@ function areaChart(points, limit, color) {
   const id = `g${Math.random().toString(36).slice(2, 7)}`;
   const last = points[points.length - 1];
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
-    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
-    ${limit ? `<line x1="0" x2="${w}" y1="${y(limit)}" y2="${y(limit)}" stroke="#ff6b7a" stroke-opacity=".55" stroke-dasharray="4 4" stroke-width="1"/>` : ''}
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    ${limit ? `<line x1="0" x2="${w}" y1="${y(limit)}" y2="${y(limit)}" stroke="#d42a40" stroke-opacity=".5" stroke-dasharray="4 4" stroke-width="1"/>` : ''}
     <polygon fill="url(#${id})" points="0,${h} ${line} ${w},${h}"/>
     <polyline fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" points="${line}"/>
     <circle cx="${x(last.t)}" cy="${y(last.v)}" r="3" fill="${color}"/>
   </svg>`;
 }
 
-function setHealth(stateName, text) {
-  $('#health-pill').dataset.state = stateName;
+const clock = (d = new Date()) => d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' });
+
+function setHealth(stateName) {
   $('#switch-dot').dataset.state = stateName;
-  $('#switch-label').dataset.state = stateName;
-  $('#switch-label').textContent = text;
-  $('#health-text').textContent = text;
 }
+
+// usage as a share of the plan limit; undefined when the plan size is unknown
+const share = (value, limit) => (limit ? Math.min(1, value / limit) : undefined);
+const meter = (ratio, cls = '') => (ratio === undefined ? '' : `<div class="bar ${ratio > 0.85 ? 'hot' : cls}"><i style="width:${Math.round(ratio * 100)}%"></i></div>`);
 
 async function loadStatus() {
   const card = $('#app-card');
@@ -487,47 +499,55 @@ async function loadStatus() {
     if (s.error) throw new Error(s.error);
     const off = s.scale === 0;
     const healthy = s.probe.healthy && !off;
-    setHealth(off ? 'off' : healthy ? 'ok' : 'bad', off ? 'خاموش' : healthy ? 'سالم' : 'مشکل دارد');
+    const health = off ? 'off' : healthy ? 'ok' : 'bad';
+    setHealth(health);
     const mem = s.memory.map((p) => ({ t: p.t, v: p.v / 1024 / 1024 }));
     const memLimit = s.planRamGB ? s.planRamGB * 1024 : 0;
-    const lastMem = mem.length ? mem[mem.length - 1].v : 0;
-    const lastCpu = s.cpu.length ? s.cpu[s.cpu.length - 1].v : 0;
+    const lastMem = mem.at(-1)?.v;
+    const lastCpu = s.cpu.at(-1)?.v;
+    const unavailable = '<b>—</b><span class="src">لیارا داده‌ای نداد</span>';
     card.innerHTML = `
       <div class="app-head">
-        <div class="app-name"><h2>${esc(s.app)}</h2>
+        <div class="app-name"><h3>${esc(s.app)}</h3>
           <a class="app-url" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url.replace('https://', ''))}${icon('link')}</a></div>
-        <span class="pill" data-state="${off ? 'off' : healthy ? 'ok' : 'bad'}"><span class="dot"></span>${off ? 'خاموش' : healthy ? 'سالم' : 'مشکل دارد'}</span>
+        <span class="pill" data-state="${health}"><span class="dot"></span>${off ? 'خاموش' : healthy ? 'سالم' : 'مشکل دارد'}</span>
       </div>
       <div class="stats">
-        <div class="stat"><span>درخواست موفق</span><b class="${s.probe.okRatio < 0.95 ? 'bad' : 'good'}">${pct(s.probe.okRatio)}</b></div>
-        <div class="stat"><span>زمان پاسخ (p95)</span><b class="${s.probe.p95 > 1500 ? 'bad' : ''}">${fa(s.probe.p95)}ms</b></div>
+        <div class="stat"><span>درخواست موفق</span><b class="${s.probe.okRatio < 0.95 ? 'bad' : ''}">${pct(s.probe.okRatio)}</b><span class="src">بررسی همیار · ${clock()}</span></div>
+        <div class="stat"><span>زمان پاسخ (p95)</span><b class="${s.probe.p95 > 1500 ? 'bad' : ''}">${fa(s.probe.p95)} <small>ms</small></b><span class="src">بررسی همیار</span></div>
+        <div class="stat"><span>حافظه</span>${lastMem === undefined ? unavailable : `<b>${fa(Math.round(lastMem))} <small>${memLimit ? `/ ${fa(memLimit)} ` : ''}MB</small></b>${meter(share(lastMem, memLimit), 'violet')}`}</div>
+        <div class="stat"><span>پردازنده</span>${lastCpu === undefined ? unavailable : `<b>${fa(Math.round(lastCpu * 100) / 100)} <small>${s.planCpu ? `از ${fa(s.planCpu)} ` : ''}هسته</small></b>${meter(share(lastCpu, s.planCpu))}`}</div>
       </div>
-      <div class="chart"><div class="chart-head"><span>رم، ۳۰ دقیقه‌ی اخیر</span><b>${fa(Math.round(lastMem))}MB${memLimit ? ` از ${fa(memLimit)}MB` : ''}</b></div>${areaChart(mem, memLimit, '#87fcc4')}</div>
-      <div class="chart"><div class="chart-head"><span>CPU، ۳۰ دقیقه‌ی اخیر</span><b>${fa(Math.round(lastCpu * 100) / 100)}${s.planCpu ? ` از ${fa(s.planCpu)} هسته` : ''}</b></div>${areaChart(s.cpu, s.planCpu, '#28c1f5')}</div>
+      <div class="chart"><div class="chart-head"><span>حافظه، ۳۰ دقیقه‌ی اخیر</span><span class="source-line">لیارا</span></div>${areaChart(mem, memLimit, '#8b5cf6')}</div>
+      <div class="chart"><div class="chart-head"><span>پردازنده، ۳۰ دقیقه‌ی اخیر</span><span class="source-line">لیارا</span></div>${areaChart(s.cpu, s.planCpu, '#3d4ee8')}</div>
       <dl class="meta">
         <dt>پلن</dt><dd>${esc(s.planID)}${s.planRamGB ? ` · ${fa(s.planRamGB)} گیگ رم` : ''}</dd>
         <dt>پلتفرم</dt><dd>${esc(s.platform || '—')}</dd>
-        <dt>نسخه</dt><dd>${esc(s.currentRelease || '—')}</dd>
+        <dt>نسخه‌ی فعال</dt><dd>${esc(s.currentRelease || '—')}</dd>
         <dt>متغیرها</dt><dd>${s.envNames.length ? esc(s.envNames.join('، ')) : '—'}</dd>
       </dl>`;
   } catch (err) {
     if (err.message === 'login required') return;
-    setHealth('unknown', 'نامشخص');
-    card.innerHTML = `<div class="empty-rail">${icon('alert')}<p>وضعیت برنامه خوانده نشد: ${esc(err.message)}</p></div>`;
+    setHealth('unknown');
+    card.innerHTML = `<p class="empty">${icon('alert')}وضعیت برنامه خوانده نشد: ${esc(err.message)}</p>`;
   }
+}
+
+const CHANNELS = { dashboard: 'داشبورد', 'mcp-elicitation': 'Claude Code', terminal: 'ترمینال' };
+const whoText = (approvedBy) => approvedBy.replace(/^user\b/, 'شما').replace(/\(([^)]+)\)/, (_, c) => `(${CHANNELS[c] || c})`);
+
+function timelineItem(e) {
+  const who = e.approvedBy ? `<span class="who">${e.outcome === 'rejected' ? 'رد' : 'تأیید'}: ${esc(whoText(e.approvedBy))}${e.detail && e.outcome === 'rejected' ? ` · «${esc(e.detail)}»` : ''}</span>` : '';
+  return `<li class="${e.outcome}"><span class="tdot"></span><span>${esc(TOOL_LABELS[e.tool] || e.tool)}${e.args?.app ? ` · <bdi>${esc(e.args.app)}</bdi>` : ''} — ${OUTCOMES[e.outcome] || e.outcome}${who}</span><span class="when">${clock(new Date(e.at))}</span></li>`;
 }
 
 async function loadTimeline() {
   try {
-    const entries = (await (await api('/api/audit')).json()).filter((e) => e.outcome !== 'previewed').slice(0, 10);
-    if (!entries.length) return;
-    $('#timeline').innerHTML = entries
-      .map((e) => {
-        const when = new Date(e.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' });
-        const who = e.approvedBy ? `<span class="who">تأیید: ${esc(e.approvedBy.replace('user', 'شما').replace('(dashboard)', '(داشبورد)').replace('(elicitation)', '(Claude Code)'))}</span>` : '';
-        return `<li class="${e.outcome}"><span class="tdot"></span><span>${esc(TOOL_LABELS[e.tool] || e.tool)}${e.args?.app ? ` · ${esc(e.args.app)}` : ''} — ${OUTCOMES[e.outcome] || e.outcome}${who}</span><span class="when">${when}</span></li>`;
-      })
-      .join('');
+    const entries = (await (await api('/api/audit')).json()).filter((e) => e.outcome !== 'previewed');
+    const ops = entries.slice(0, 10);
+    if (ops.length) $('#timeline').innerHTML = ops.map(timelineItem).join('');
+    const decisions = entries.filter((e) => ['approved', 'rejected', 'revoked'].includes(e.outcome)).slice(0, 15);
+    if (decisions.length) $('#decisions').innerHTML = decisions.map(timelineItem).join('');
   } catch {}
 }
 
@@ -536,22 +556,22 @@ async function loadTimeline() {
 function setWatch(on) {
   clearInterval(state.watchTimer);
   state.alerted = false;
-  $('#watch-text').textContent = on ? 'هر ۳۰ ثانیه سایت تست می‌شود' : 'خاموش';
+  $('#watch-text').textContent = on ? 'هر ۳۰ ثانیه سایت تست می‌شود' : 'خاموش · هر ۳۰ ثانیه، تا وقتی این صفحه باز است';
   if (!on) return;
   const tick = async () => {
     if (!state.app) return;
     try {
       const p = await (await api(`/api/probe?app=${encodeURIComponent(state.app)}`)).json();
-      $('#watch-text').textContent = `آخرین تست ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}: ${p.healthy ? 'سالم' : 'مشکل'}`;
+      $('#watch-text').textContent = `آخرین تست ${clock()}: ${p.healthy ? 'سالم' : 'مشکل'}`;
       if (!p.healthy && !state.alerted) {
         state.alerted = true;
-        setHealth('bad', 'مشکل دارد');
+        setHealth('bad');
         $('#alert-text').textContent = `سایت ${state.app} مشکل دارد: ${pct(p.okRatio)} درخواست موفق، زمان پاسخ ${fa(p.p95)}ms`;
         $('#alert').hidden = false;
       } else if (p.healthy) {
         state.alerted = false;
         $('#alert').hidden = true;
-        setHealth('ok', 'سالم');
+        setHealth('ok');
       }
     } catch {}
   };
@@ -574,25 +594,65 @@ $('#login-form').onsubmit = async (e) => {
     init();
   } else {
     $('#login-error').hidden = false;
-    $('#login-error').textContent = 'رمز اشتباه است.';
+    $('#login-error').textContent = res.status === 429 ? 'تلاش زیاد بود؛ ۱۵ دقیقه‌ی دیگر دوباره امتحان کنید.' : 'رمز اشتباه است.';
   }
 };
 
-// ---------- wiring ----------
+// ---------- routes and the status sheet ----------
 
-function selectTab(name) {
-  document.querySelectorAll('.seg').forEach((t) => {
-    const active = t.dataset.tab === name;
-    t.classList.toggle('active', active);
-    t.setAttribute('aria-selected', String(active));
-  });
-  $('#panel-chat').classList.toggle('active', name === 'chat');
-  $('#panel-status').classList.toggle('active', name === 'status');
+const ROUTES = ['home', 'approvals', 'settings'];
+
+function route() {
+  const name = location.hash.replace(/^#\/?/, '').split('/')[0] || 'home';
+  const page = ROUTES.includes(name) ? name : 'home';
+  document.querySelectorAll('.page').forEach((p) => (p.hidden = p.dataset.page !== page));
+  document.querySelectorAll('[data-route]').forEach((a) => (a.dataset.route === page ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  closeStatus();
+  if (page === 'approvals') loadTimeline();
+  if (page === 'settings') renderSettings();
+  // move focus for keyboard and screen-reader users, except on first load
+  if (state.routed) $('#view').focus({ preventScroll: true });
+  state.routed = true;
+  window.scrollTo(0, 0);
 }
 
-document.querySelectorAll('.seg').forEach((t) => (t.onclick = () => selectTab(t.dataset.tab)));
+function openStatus() {
+  $('#panel-status').classList.add('open');
+  $('#scrim').hidden = false;
+  $('#status-btn').setAttribute('aria-expanded', 'true');
+  $('#panel-close').focus();
+}
+
+function closeStatus() {
+  if (!$('#panel-status').classList.contains('open')) return;
+  $('#panel-status').classList.remove('open');
+  $('#scrim').hidden = true;
+  $('#status-btn').setAttribute('aria-expanded', 'false');
+}
+
+function renderSettings() {
+  const c = state.config;
+  if (!c) return;
+  const [label, hint] = MODES[c.mode] || [c.mode, ''];
+  $('#settings-list').innerHTML = `
+    <dt>حالت کار</dt><dd>${esc(label)}<small>${esc(hint)} · با HAMYAR_MODE عوض می‌شود</small></dd>
+    <dt>هوش مصنوعی</dt><dd>${c.ai ? `${esc(c.provider)} · <code>${esc(c.model)}</code>` : 'وصل نیست'}<small>${c.ai ? 'گفت‌وگو فعال است' : 'دکمه‌های بررسی سریع بدون هوش مصنوعی هم کار می‌کنند'}</small></dd>
+    <dt>ورود</dt><dd>${c.auth ? 'با رمز' : 'فقط روی همین کامپیوتر'}<small>${c.auth ? 'نشست بعد از یک ساعت بی‌کاری تمام می‌شود' : 'بدون رمز، داشبورد فقط از 127.0.0.1 باز می‌شود'}</small></dd>
+    <dt>حساب لیارا</dt><dd>${esc(state.me?.name || '—')}<small>${esc(state.me?.email || '')}</small></dd>`;
+  $('#logout-btn').hidden = !c.auth;
+}
+
+// ---------- wiring ----------
+
+window.addEventListener('hashchange', route);
+$('#status-btn').onclick = openStatus;
+document.querySelector('[data-open-status]').onclick = openStatus;
+$('#panel-close').onclick = closeStatus;
+$('#scrim').onclick = closeStatus;
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeStatus());
+
 document.querySelectorAll('.tile').forEach((tile) => {
-  tile.onclick = () => (state.ai ? send(tile.dataset.prompt) : quick(tile.querySelector('b').textContent, tile.dataset.quick));
+  tile.onclick = () => (state.ai ? send(tile.dataset.prompt) : quick(tile.textContent.trim(), tile.dataset.quick));
 });
 
 const input = $('#input');
@@ -621,29 +681,51 @@ $('#app-select').onchange = (e) => {
 $('#watch-toggle').onchange = (e) => setWatch(e.target.checked);
 $('#alert-btn').onclick = () => {
   $('#alert').hidden = true;
-  selectTab('chat');
+  location.hash = '#/';
   const prompt = `سایت ${state.app} مشکل دارد، بررسی کن.`;
   state.ai ? send(prompt) : quick(prompt, 'diagnose');
 };
-$('#stop-btn').onclick = async () => {
+async function stopAll() {
   await api('/api/stop', { method: 'POST' }).catch(() => {});
   document.querySelectorAll('.approval:not(.decided)').forEach((el) => markDecided(el, false, 'با دکمه‌ی توقف لغو شد'));
   toast('همه‌ی تأییدهای در انتظار لغو شد؛ هیچ عملیاتی اجرا نمی‌شود.');
+  loadInbox();
+}
+$('#stop-btn').onclick = stopAll;
+$('#stop-btn-2').onclick = stopAll;
+$('#logout-btn').onclick = async () => {
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
 };
 
 // ---------- persisted approvals and operations (survive refresh and restart) ----------
 
-const SOURCE_LABEL = { mcp: 'درخواست از Claude Code', dashboard: 'درخواست از همین داشبورد' };
+const SOURCE_LABEL = { mcp: 'از Claude Code', dashboard: 'از همین داشبورد' };
 
 async function loadInbox() {
   try {
     const list = await (await api('/api/approvals')).json();
+    const box = $('#approvals-list');
+    const pendingIds = new Set(list.map((r) => r.id));
+    // decided elsewhere (terminal, Claude Code, another tab) or expired
+    for (const el of box.querySelectorAll('.approval:not(.decided)')) {
+      if (!pendingIds.has(el.dataset.id)) markDecided(el, false, 'این درخواست دیگر در انتظار نیست (تصمیم گرفته شد یا منقضی شد).');
+    }
     for (const r of list) {
       if (document.querySelector(`.approval[data-id="${r.id}"]`)) continue;
-      approvalCard(r);
-      const head = document.querySelector(`.approval[data-id="${r.id}"] .approval-head`);
-      if (head) head.insertAdjacentHTML('beforeend', `<span class="badge source">${esc(SOURCE_LABEL[r.source] || r.source)} · ${esc(r.id)}</span>`);
+      const el = approvalCard(r, box);
+      el.querySelector('.approval-head').insertAdjacentHTML('beforeend', `<span class="badge source">${esc(SOURCE_LABEL[r.source] || r.source)} · #${esc(r.id)}</span>`);
     }
+    $('#approvals-empty').hidden = Boolean(box.querySelector('.approval:not(.decided)'));
+    document.querySelectorAll('[data-count]').forEach((b) => {
+      b.hidden = !list.length;
+      b.textContent = fa(list.length);
+    });
+    // requests that are not already in the conversation get a link from the home page
+    const elsewhere = list.filter((r) => !thread.querySelector(`.approval[data-id="${r.id}"]`)).length;
+    const note = $('#inbox-note');
+    note.hidden = !elsewhere;
+    note.innerHTML = `${icon('shield')}${fa(elsewhere)} درخواست منتظر تأیید شماست — مشاهده`;
   } catch {}
 }
 
@@ -671,22 +753,37 @@ async function loadOperations() {
   } catch {}
 }
 
-async function init() {
+async function loadAccount() {
   try {
-    const config = await (await api('/api/config')).json();
-    state.ai = config.ai;
-    const [label, hint] = MODES[config.mode] || [config.mode, ''];
-    $('#mode-text').textContent = label;
-    $('#mode-chip').title = hint;
+    const me = await (await api('/api/me')).json();
+    if (me.error) throw new Error(me.error);
+    state.me = me;
+    $('#account-name').textContent = me.name || me.email || 'حساب لیارا';
+    $('#account-avatar').textContent = (me.name || me.email || 'ل').trim().charAt(0);
+    $('#balance-text').textContent = `موجودی ${fa(Math.round(me.balance))} تومان`;
+  } catch (err) {
+    if (err.message !== 'login required') $('#balance-text').textContent = 'حساب خوانده نشد';
+  }
+}
 
-    const { balance, apps } = await (await api('/api/apps')).json();
-    $('#balance-text').textContent = `${fa(Math.round(balance))} تومان`;
+async function init() {
+  route();
+  try {
+    state.config = await (await api('/api/config')).json();
+    state.ai = state.config.ai;
+    const [label, hint] = MODES[state.config.mode] || [state.config.mode, ''];
+    $('#mode-text').textContent = `حالت ${label}`;
+    $('#mode-text').title = hint;
+    renderSettings();
+    loadAccount().then(renderSettings);
+
+    const { apps } = await (await api('/api/apps')).json();
     const select = $('#app-select');
     select.innerHTML = apps.length
       ? apps.map((a) => `<option value="${esc(a.name)}">${esc(a.name)}${a.scale === 0 ? ' (خاموش)' : ''}</option>`).join('')
       : '<option value="">برنامه‌ای ندارید</option>';
     state.app = apps[0]?.name || '';
-    if (!apps.length) setHealth('unknown', 'بدون برنامه');
+    if (!apps.length) setHealth('unknown');
     loadStatus();
     loadTimeline();
     // requests filed by Claude Code and operations in flight appear here too

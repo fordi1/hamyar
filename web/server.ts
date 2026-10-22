@@ -209,7 +209,12 @@ const server = createServer(async (req, res) => {
 
     switch (`${req.method} ${url.pathname}`) {
       case 'GET /api/config':
-        return json(res, 200, { mode: ctx.policy.mode, ai: Boolean(llm), auth: Boolean(PASSWORD) });
+        return json(res, 200, { mode: ctx.policy.mode, ai: Boolean(llm), provider: llm?.provider, model: llm?.model, auth: Boolean(PASSWORD) });
+      case 'GET /api/me': {
+        // only what the top bar shows; never national code, phone or tokens
+        const [me, balance] = await Promise.all([ctx.client.me(), ctx.client.balance()]);
+        return json(res, 200, { name: me.user?.fullname ?? '', email: me.user?.email ?? '', balance });
+      }
       case 'GET /api/apps': {
         const [balance, apps] = await Promise.all([ctx.client.balance(), ctx.client.listApps()]);
         return json(res, 200, { balance, apps: apps.map((a: any) => ({ name: a.project_id, status: a.status, scale: a.scale, planID: a.planID, type: a.type })) });
