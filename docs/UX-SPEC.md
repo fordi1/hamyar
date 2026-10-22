@@ -1,6 +1,6 @@
 # Hamyar — UX architecture and design system (Phase 2)
 
-Status: proposal for approval. Nothing here is implemented yet; Phase 3 builds it.
+Status: approved in Phase 2 and implemented in Phase 3. §11 lists where the build differs.
 Wireframes: [`docs/wireframes.html`](wireframes.html) (open in a browser; desktop and 375 px).
 
 ## 0. Decisions that shape everything
@@ -229,3 +229,17 @@ All new write paths go through `runAction` and the approval store; nothing bypas
 - Private GitHub repositories are not supported in this version.
 - Monitoring is live only while the dashboard is open (watch mode), not 24/7.
 - Metric shapes, rollback endpoint and release states are still unverified until the account is charged.
+
+## 11. What shipped (Phase 3) and where it differs
+Screens A–G are built (`web/public/app.js`, `wizard.js`, `apps.js`, `incidents.js`, `domains.js`);
+screenshots in `docs/screenshots/`.
+
+| Spec | Shipped |
+|---|---|
+| Mobile tab bar: خانه · دیپلوی · سرویس‌ها · حوادث · بیشتر | خانه · دیپلوی · سرویس‌ها · حوادث · تنظیمات; approvals open from the bell in the top bar, the status sheet from the pulse button |
+| App detail tab «تنظیمات» (env keys, plan) | Not built; env names and plan are on «نمای کلی», changes go through the chat |
+| Services list shows health | Shows Liara's on/off only; health is measured on each app page (no probe per list row) |
+| Incident closed only by verify | Also closable by the user with a recorded reason («بسته شد بدون تأیید رفع») |
+| Domain method choice | Saved in the browser; once a Liara DNS zone exists the method is read from Liara |
+| Wizard state survives refresh | Everything except env values (never stored); a deploy in flight after a refresh is followed under «آخرین عملیات» |
+| Fixes in the incident page | restart / turn on run directly (with approval); other fixes are handed to the chat |

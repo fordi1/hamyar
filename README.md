@@ -10,7 +10,9 @@ It ships as two front ends over one core:
 
 - **MCP server** for Claude Code, Cursor or Claude Desktop — the coding agent finds the bug with
   Hamyar, fixes the code, and Hamyar redeploys and verifies.
-- **Persian web dashboard** (RTL, mobile-first) — chat, approval cards, live status, watch mode.
+- **Persian web dashboard** (RTL, desktop and mobile) — chat with action cards, a guided deploy
+  wizard (ZIP, GitHub or local folder), service pages with monitoring, logs and releases, incident
+  workspace and history, domain assistant, approvals inbox and watch mode.
 
 > Full design: [docs/TECHNICAL.md](docs/TECHNICAL.md)
 
@@ -20,7 +22,9 @@ It ships as two front ends over one core:
 
 | Area | What Hamyar does |
 |---|---|
-| **First deploy** | Detects the platform exactly like `liara deploy` (ported from the Liara CLI), finds env vars the code reads but are not set, recommends the cheapest *available* plan with enough RAM from the live plan catalogue (with price and reasons), checks the balance, shows one approval card, then creates the app, uploads, follows the build and probes the live URL. |
+| **First deploy** | Detects the platform exactly like `liara deploy` (ported from the Liara CLI), finds env vars the code reads but are not set, recommends the cheapest *available* plan with enough RAM from the live plan catalogue (with price and reasons), checks the balance, shows one approval card, then creates the app, sets the env values you typed, uploads, follows the build and reports success only after verifying the live URL. Code can come from a ZIP upload, a public GitHub repository (Hamyar downloads it and uploads through the official sources endpoint) or a local folder. |
+| **Monitoring** | Service pages with health, CPU and RAM against the plan limit, network, disk, release markers, filtered logs and release history; anything Liara does not return is shown as unavailable, never invented. |
+| **Incidents** | Every investigation that finds a problem opens an incident: evidence, confirmed / probable / inconclusive / rejected hypotheses, decisions from the audit log, before/after, and a Persian report to copy or download. |
 | **Releases & operations** | Deploy new versions, set env vars (merged, never wiping existing ones), restart, turn on/off, change plan (with monthly price difference), roll back. |
 | **Domains** | Connects a domain, tells the user the exact records or IRNIC nameservers to set, checks public DNS until they appear, can run the domain on Liara DNS and create the records itself, then enables SSL. |
 | **SRE investigation** | Collects logs, events, container state, CPU/RAM series, release history and a live HTTP probe; runs 12 deterministic detectors; builds a **hypothesis board** (validated / rejected / inconclusive) with numbered evidence (E1, E2…) and a root cause; ranks fixes; writes a Persian incident report. |
@@ -84,6 +88,29 @@ npm run web
 
 Open http://localhost:3000. Without a password the dashboard only listens on `127.0.0.1`.
 To run it on Liara, deploy this folder as a `node` app with `HAMYAR_DASHBOARD_PASSWORD` set.
+
+| Page | What you do there |
+|---|---|
+| داشبورد | Talk to Hamyar or use the four actions (deploy, service status, diagnose, manage deploys) |
+| دیپلوی جدید | Pick ZIP / GitHub / local folder → see the analysis and real plans → type env values → approve → watch the deploy → verified URL |
+| سرویس‌ها | Each app: overview, monitoring, logs, releases; restart, turn on/off, roll back (each with approval) |
+| دامنه و DNS | Connect a domain step by step; copy the exact nameservers or records; Hamyar checks public DNS and enables SSL |
+| حوادث | History of investigations and the workspace for each incident, with its Persian report |
+| تأییدها | Every pending change, including those requested from Claude Code |
+
+| | Desktop (1440 px) | Mobile (375 px) |
+|---|---|---|
+| Home | ![](docs/screenshots/01-home-desktop.png) | ![](docs/screenshots/01-home-mobile.png) |
+| Deploy: analysis and plans (real data) | ![](docs/screenshots/03-deploy-analysis-desktop.png) | ![](docs/screenshots/03-deploy-analysis-mobile.png) |
+| Deploy: approval | ![](docs/screenshots/04-deploy-approval-sample-desktop.png) | ![](docs/screenshots/04-deploy-approval-sample-mobile.png) |
+| Monitoring | ![](docs/screenshots/07-monitoring-sample-desktop.png) | ![](docs/screenshots/07-monitoring-sample-mobile.png) |
+| Incident workspace | ![](docs/screenshots/09-incident-sample-desktop.png) | ![](docs/screenshots/09-incident-sample-mobile.png) |
+| Domain assistant | ![](docs/screenshots/10-domain-sample-desktop.png) | ![](docs/screenshots/10-domain-sample-mobile.png) |
+
+Screenshots marked *sample* render pages that need a live app (charts, incidents, DNS steps) from
+sample responses injected in the browser, because the test account has no app yet; all others show
+real data. All of them are in [`docs/screenshots/`](docs/screenshots/) and are regenerated with
+`npx tsx scripts/screenshots.ts` while the dashboard runs.
 
 ### Command-line helpers
 
@@ -178,7 +205,11 @@ Platform detection, default ports, ignore rules and the release body are ported 
 - **Audit log**: `audit.jsonl` records previewed / executed / failed / rejected / blocked actions and
   who approved them.
 - **Dashboard**: localhost-only without a password; with one (12+ characters): expiring HttpOnly
-  session, login rate limit, same-origin JSON-only writes, strict CSP.
+  session, login rate limit, same-origin JSON-only writes (ZIP upload: same-origin `application/zip`
+  only), strict CSP with no inline scripts or styles. Buttons on app and domain pages file the same
+  approval requests as the chat; nothing on a page changes Liara without an approval.
+- **Uploads**: ZIP entries that would land outside the project folder are refused, links are skipped,
+  size is capped (50 MB upload, 300 MB unpacked); GitHub downloads are capped too.
 
 ---
 
@@ -195,7 +226,13 @@ Platform detection, default ports, ignore rules and the release body are ported 
 - Liara AI's free `base` workspace is documented but rejected by the API (`plan must be one of
   [standard, pro]`, checked 2026-10-21), so Liara AI needs a charged account. Hamyar therefore
   accepts any OpenAI-compatible provider; the demo runs on boxapi.ir (`openai/gpt-6-sol`). Quick
-  actions (diagnose, status, logs) work without any AI.
+  actions (diagnose, status, logs) and all dashboard pages work without any AI.
+- Deploy from GitHub supports public repositories only; for a private one, upload a ZIP.
+- Liara does not expose request counts or status codes, so the monitoring page does not show them;
+  the unit of network metrics is shown as Liara returns it and is not yet confirmed on a live app.
+- With no app on the test account yet, the monitoring, logs, releases, incident and domain-step views
+  were checked with sample data in the browser; the API paths behind them were run against Liara
+  (errors, approvals and DNS lookups are real).
 
 ---
 
@@ -203,10 +240,10 @@ Platform detection, default ports, ignore rules and the release body are ported 
 
 | Check | Result |
 |---|---|
-| Unit tests (`npm test`) | 179 passing: detection, env scan, plan advisor, packing, deploy state machine and verification, detectors, RCA board, verify, postmortem, approvals, policy, actions (launch, rollback), operations, dashboard security, agent loop, redaction, domains |
+| Unit tests (`npm test`) | 238 passing: detection, env scan, plan advisor, packing, deploy state machine and verification, detectors, RCA board, verify, postmortem, approvals, policy, actions (launch, rollback), operations, deploy sources (ZIP safety, GitHub), wizard, monitoring, incidents, domain assistant, dashboard security and client checks, agent loop, redaction, domains |
 | Real Liara API (read-only) | `/v1/me` (42 plans), `/v1/billing`, `/v1/projects`, Liara DNS zones, Liara AI workspaces |
 | MCP end to end (`npm run mcp-smoke`) | request filed → callback before approval not executed → approved with different args blocked → executed → reuse blocked → elicitation "no" audited with reason → elicitation "yes" executed |
-| Dashboard | checked in a browser at desktop and 375 px (no horizontal overflow, no wrapped buttons) |
+| Dashboard | every page checked in a browser at 1440, 900 and 375 px (no horizontal overflow, no wrapped buttons, 44 px controls); screenshots in `docs/screenshots/` |
 
 Demo app ("Broken Shop") run locally with real traffic and real logs (`npm run scenario -- <fault>`):
 
@@ -226,11 +263,12 @@ Live runs against a deployed app on Liara are added here after the first deploy.
 
 ```
 core/            Liara client, detection, env scan, plan advisor, packer, deployer,
-                 policy (tiers, rate limits, audit), approvals, operations, actions, domain logic, agent loop, shared ops
+                 policy (tiers, rate limits, audit), approvals, operations, incidents, actions,
+                 deploy sources and wizard, monitoring, domain logic and assistant, agent loop, shared ops
 core/sre/        snapshot collector, log clustering, detectors, RCA board, verify, postmortem
 mcp/server.ts    MCP server (21 tools)
-web/             dashboard server and RTL UI
+web/             dashboard server, security, RTL UI (app, wizard, apps, incidents, domains)
 demo-app/        Broken Shop with switchable faults (FAULT=memory_leak|slow|bad_release)
-scripts/         smoke test, analyze, diagnose, local scenarios, MCP end-to-end check
-docs/            technical design
+scripts/         smoke test, analyze, diagnose, local scenarios, MCP end-to-end check, approve, screenshots
+docs/            technical design, UX spec and wireframes, demo script, screenshots
 ```

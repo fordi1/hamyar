@@ -49,7 +49,7 @@ Both entry points share **one core library**, so behaviour, safety rules and aud
 
 ```mermaid
 flowchart LR
-  U[User] -->|chat / approve| WEB[Web dashboard<br/>Next.js, RTL]
+  U[User] -->|chat / pages / approve| WEB[Web dashboard<br/>node:http + vanilla JS, RTL]
   DEV[Developer in Claude Code] -->|MCP stdio| MCP[MCP server]
   WEB --> AG[Agent loop<br/>LLM tool calling]
   AG --> LLM[(Liara AI<br/>OpenAI-compatible)]
@@ -64,35 +64,49 @@ flowchart LR
     RED[redact.ts]
   end
   CL -->|HTTPS Bearer| API[(Liara API<br/>api.liara.ir)]
-  CL -->|WSS exec| API
   SRE -->|HTTP probe| SITE[(User site)]
   POL --> AUD[(audit.jsonl)]
+  POL --> ST[(.hamyar/<br/>approvals, operations,<br/>incidents, sources)]
 ```
 
 ### 3.1 Repository layout
 ```
 hamyar/
   core/
-    liara-client.ts     Typed wrapper around Liara REST + WebSocket exec
+    liara-client.ts     Typed wrapper around Liara REST and Liara DNS
     detect.ts           Platform detection (port of Liara CLI) + port / start command guess
     env-scan.ts         Env vars the code reads vs .env.example vs Liara envs
     plan-advisor.ts     Recommend a plan with reason and price
-    deployer.ts         Pack → upload → release → poll → verify → auto-rollback
-    liara-json.ts       Generate a liara.json (with healthCheck)
-    policy.ts           Risk tiers, rate limits, audit log
+    analyze.ts          Launch plan; liara.json with Liara's documented healthCheck
+    pack.ts             tar.gz of the project (.gitignore/.liaraignore, never .env)
+    deployer.ts         Upload → release → follow build → verify (VERIFIED_HEALTHY / HEALTH_FAILED)
+    actions.ts          Change actions with previews; runAction() is the approval gate
+    policy.ts           Risk tiers, rate limits, audit log; owns the stores below
     approvals.ts        Persistent approval requests decided only through trusted human channels
     operations.ts       Persisted operations, resume after restart
-    redact.ts           Mask secrets before any LLM call or log output
+    incidents.ts        Incident history: opened by diagnose, closed by verify; Persian report
+    sources.ts          Deploy sources: ZIP upload, public GitHub archive, local folder (safe extraction)
+    wizard.ts           Guided first deploy: analysis, plan options, approval with typed env values
+    monitor.ts          Shapes logs / metrics / releases for app pages; approval-gated page actions
+    domain-assistant.ts Domain state (Liara, Liara DNS, public DNS) as ordered steps
+    domain.ts           DNS records, registrar hints, public DNS checks
+    agent.ts            LLM tool-calling loop (OpenAI-compatible), values card for secrets
+    ops.ts              Read-only operations shared by MCP and dashboard
+    redact.ts           Mask secrets before any LLM call or MCP output
     sre/
       collect.ts        One "snapshot" of everything about an app
       detectors.ts      Deterministic checks → findings with evidence
       rca.ts            Hypothesis board + confidence + fix options
       verify.ts         Success criteria, before/after measurement
-      postmortem.ts     Persian incident report
+      postmortem.ts     Persian incident report (chat/MCP)
   mcp/server.ts         MCP stdio server exposing core as tools
-  web/                  Next.js dashboard (chat, approval cards, status, timeline)
+  web/
+    server.ts           Static UI + JSON API + streamed agent runs (node:http)
+    security.ts         Sessions, login limiter, CSRF guard, CSP and headers
+    public/             app.js (shell, chat, status) · wizard.js · apps.js · incidents.js · domains.js
+  scripts/              smoke, analyze, diagnose, scenarios, MCP e2e, approve, screenshots
   demo-app/             "Broken Shop" with fault flags for the demo
-  docs/TECHNICAL.md     This document
+  docs/                 TECHNICAL.md · UX-SPEC.md · wireframes.html · DEMO.md · screenshots/
   README.md             Quick start (deliverable)
 ```
 
@@ -100,12 +114,13 @@ hamyar/
 | Concern | Choice | Why |
 |---------|--------|-----|
 | Language | TypeScript, Node ≥ 20 | Same language as Liara's own CLI → detection logic ports 1:1 |
-| LLM | Liara AI (OpenAI-compatible chat completions, tool calling) | Keeps the whole product inside Liara; strong integration story |
-| Agent loop | Vercel AI SDK (`ai` + OpenAI-compatible provider) | Streaming, tool calling, human approval steps |
+| LLM | Any OpenAI-compatible chat completions with tool calling: Liara AI, or e.g. boxapi.ir | Liara AI's free workspace is rejected by the API (§7.5) |
+| Agent loop | Own loop in `core/agent.ts` (no SDK) | Small, testable; approvals and secret values handled in code, not by the model |
 | MCP | `@modelcontextprotocol/sdk` (stdio) | Works in Claude Code, Cursor, Claude Desktop |
-| Web | Next.js App Router, Tailwind, Vazirmatn font, RTL | Fast to build, deployable on Liara (`platform: next`) |
+| Web | `node:http` + vanilla JS (no build step), Vazirmatn self-hosted, RTL, strict CSP | Deploys on Liara as a plain `node` app; nothing to bundle |
 | Packing | `tar` + `ignore` (honours `.gitignore` / `.liaraignore`) | Same artefact format the Liara CLI uploads |
-| Tests | Vitest | Fast unit tests for pure logic |
+| ZIP intake | `yauzl` (reader); `yazl` only in tests | Node has no ZIP reader; entries are validated before writing |
+| Tests | Vitest | Fast unit tests for pure logic, plus static checks on the dashboard client |
 
 ---
 
@@ -383,8 +398,13 @@ a source id. Either way the result is verified like a deploy. If neither path is
 is told to redeploy the last good code from the project folder. **Unverified on a live app.**
 
 ### 7.5 Limits disclosed to the user
-Shown in the dashboard «محدودیت‌ها» panel and in the README:
-- No documented endpoint for rollback / build logs **[update after Phase 0]**.
+Shown on the dashboard settings page («همیار چه کارهایی نمی‌کند») and in the README:
+- Rollback and build logs use endpoints the Liara CLI uses but the official spec does not document;
+  rollback falls back to republishing the target release's source (§7.4.3). Not yet run on a live app.
+- Liara exposes no request counts or status-code distribution; the monitoring page says so instead
+  of drawing them. The unit of network metrics is shown as returned and is not yet confirmed.
+- Deploy from GitHub supports public repositories only (Hamyar downloads the archive; Liara has no
+  documented deploy-from-GitHub API). ZIP uploads are capped at 50 MB (300 MB unpacked).
 - Liara AI: the docs mention one free `base` workspace per user, but `POST ai.liara.ir/v1/workspaces`
   rejects it (`"plan" must be one of [standard, pro]`, checked 2026-10-21). The AI agent therefore
   needs a charged account; the quick-action buttons (diagnose, status, logs) work without it.
@@ -414,6 +434,10 @@ CNAME (SSL) per domain (docs: `paas/domains/add-domain`). `.ir` domains are mana
      DNS and what is currently there, plus the apex-CNAME caveat (use ALIAS/ANAME).
 4. When records are visible → `enable_ssl` (T1).
 
+The dashboard's domain assistant (`core/domain-assistant.ts`) turns the same reads into ordered steps
+with a state each — `done`, `current` (Hamyar can do it, after approval), `manual` (the user must act
+at the registrar) or `todo`. A manual step is never reported done until public DNS shows it.
+
 Verified read-only against real services: Liara DNS accepts the console token (`GET /api/v1/zones`),
 public lookups work (e.g. NS of `liara.ir`). **[verify]** with a real domain: the exact `contents` shape
 per record type (`{host}` for CNAME/ALIAS, `{text}` for TXT is assumed — not documented), the TXT
@@ -425,21 +449,46 @@ shown from the Liara console until confirmed).
 ## 9. Interfaces
 
 ### 9.1 Web dashboard (`web/server.ts`, `web/public/`)
-Plain `node:http` server + vanilla JS (no build step). The agent loop (`core/agent.ts`) runs the
-model with tool calling; read-only tools run directly, change tools pause and stream an approval
-card; the run resumes when the user clicks approve/reject (`POST /api/approve`). For `set_env`, the
-model only names the keys; the user types values into password fields on the card and they go
-straight to Liara (verified by test: the value never appears in model messages or UI events).
-`POST /api/stop` revokes all tokens and rejects pending cards. Quick-action chips run read-only
-tools without the model, so diagnosis works even if the AI is unavailable.
+Plain `node:http` server + vanilla JS (no build step), light design from `docs/UX-SPEC.md`:
+side menu (right), page in the centre, service status panel (left); below 1200 px the menu shrinks
+to icons and the status panel becomes a sheet; below 768 px a bottom tab bar replaces the menu.
+Hash routes, one file per area:
 
-- **Chat** (left/top on mobile): Persian conversation; tool calls render as compact status rows
-  («در حال خواندن لاگ‌ها… ✓»).
-- **Approval cards** inline in chat (see §7.2).
-- **Status panel**: app status, current release, plan, CPU/RAM sparkline, last probe result,
-  watch-mode toggle.
-- **Incident timeline**: trigger → evidence → hypotheses → approval → action → verification.
-- RTL, Vazirmatn, mobile-first (verified at 375 px), Persian digits with proportional figures.
+| Route | File | Screen |
+|---|---|---|
+| `#/` | `app.js` | A · command center: four actions, chat with run cards, hypothesis board, approval cards |
+| `#/deploy` | `wizard.js` | B · source (ZIP / GitHub / local) → analysis and real plans → name and env values → approval → progress → verified result |
+| `#/apps`, `#/apps/:app/:tab` | `apps.js` | services list; app overview, C · monitoring, logs, releases; restart / on-off / rollback |
+| `#/domains/:app/:domain` | `domains.js` | F · domain assistant |
+| `#/incidents`, `#/incidents/:id` | `incidents.js` | G · history and D · incident workspace |
+| `#/approvals`, `#/settings` | `app.js` | E · approvals inbox (dashboard + Claude Code), read-only settings, kill switch |
+
+The agent loop (`core/agent.ts`) runs the model with tool calling; read-only tools run directly,
+change tools pause and stream an approval card; the run resumes when the user decides
+(`POST /api/approve`). For `set_env` / `launch_app` the model only names the keys; the user types
+values into password fields and they go straight to Liara. Page buttons (restart, on/off, rollback,
+domain steps) call `POST /api/action/request`, which files a request marked `direct`; approving it
+in the dashboard runs it on the server and the page follows it through `/api/operations`.
+`POST /api/stop` revokes every pending and approved-but-unused request.
+
+API used by the pages (all behind the session and CSRF checks of §7.4.1):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/config`, `GET /api/me` | mode, AI provider, auth; account name, e-mail, balance |
+| `GET /api/apps`, `GET /api/status?app=`, `GET /api/probe?app=` | apps; status panel; live probe |
+| `GET /api/apps/:app/{metrics,logs,releases,domains,domain}` | app pages and domain status |
+| `POST /api/source/{zip,github,local}`, `POST /api/wizard/{analyze,request,start,cancel}` | deploy wizard (`start` streams NDJSON progress) |
+| `POST /api/action/request`, `GET/POST /api/approvals`, `POST /api/approve`, `GET /api/operations` | approvals and operations |
+| `GET /api/incidents`, `GET /api/incidents/:id`, `POST /api/incidents/:id/close` | incidents (actions merged from the audit log) |
+| `POST /api/chat`, `POST /api/quick`, `POST /api/stop` | agent run, read-only quick tools, kill switch |
+
+Data honesty in the UI: every number names its source («بررسی همیار» or «لیارا»); a series Liara does
+not return is shown as unavailable with the reason; success is shown only after verification.
+RTL, Vazirmatn, Persian digits with proportional figures, Latin runs isolated with `<bdi>`, no inline
+styles (the CSP forbids them; widths are applied through the CSSOM). Screenshots: `docs/screenshots/`
+(`npx tsx scripts/screenshots.ts` regenerates them; names ending in `-sample` use sample responses
+injected in the browser because the account has no app yet).
 
 ### 9.2 MCP tools (`mcp/server.ts`, 21 tools)
 | Tool | Tier | Purpose |
@@ -506,12 +555,17 @@ A load script generates traffic so metrics move during the demo.
 ---
 
 ## 11. Testing and quality
-- Unit tests (Vitest) for pure logic: `detect`, `env-scan`, `plan-advisor`, `detectors`,
-  `rca` confidence, `policy` (tokens, tiers, rate limits), `redact`.
-- Fixture snapshots captured from real Liara responses (secrets removed) for detector tests.
+- Unit tests (Vitest, 238 at the end of Phase 3) for pure logic: detection, env scan, plan
+  advisor, packing, deploy state machine, detectors, RCA, verify, postmortem, approvals, policy,
+  actions, operations, sources (ZIP traversal / links / size limits, GitHub download), wizard,
+  monitor shaping and page actions, incidents, domain assistant, dashboard security, redaction.
+- `web/ui.test.ts`: every element the client scripts look up exists, no inline styles, every
+  script is loaded (added after a missing element stopped `app.js` at load).
+- `npm run mcp-smoke`: MCP end to end with a real client (§9.2).
 - Live scenario runs against a real Liara account for each demo flag, recorded in the README
-  scorecard (scenario → correct root cause → time to fix).
-- UI checked in a browser at desktop width and 375 px.
+  scorecard (scenario → correct root cause → time to fix) — pending a charged account.
+- UI checked in a browser at 1440, 900 and 375 px (no horizontal overflow, no wrapped buttons,
+  44 px controls) and captured in `docs/screenshots/`.
 
 ---
 
