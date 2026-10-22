@@ -23,6 +23,7 @@ import { resumeOperations } from '../core/operations.js';
 import { MAX_ARCHIVE_BYTES, SourceError, SourceStore, extractZip, fetchGithub, parseGithubUrl } from '../core/sources.js';
 import { WizardError, analyzeSource, cancelDeploy, requestDeploy, startDeploy } from '../core/wizard.js';
 import { renderIncidentReport, type AuditRow, type Incident } from '../core/incidents.js';
+import { domainStatus, validDomain } from '../core/domain-assistant.js';
 import { RANGES, requestAppAction, runApprovedAppAction, shapeLogs, shapeMetrics, shapeReleases, validAppName, type LogLevel, type Range } from '../core/monitor.js';
 import { LoginLimiter, SECURITY_HEADERS, SessionStore, checkMutationRequest, passwordProblem } from './security.js';
 
@@ -228,6 +229,16 @@ async function appData(res: ServerResponse, app: string, kind: string, url: URL)
     return json(res, 200, shapeLogs(raw, { level: level && ['error', 'warn', 'info'].includes(level) ? level : undefined, q: url.searchParams.get('q') ?? undefined }));
   }
   if (kind === 'releases') return json(res, 200, shapeReleases(await ctx.client.releases(app, 20)));
+  if (kind === 'domains') {
+    const list = await ctx.client.domains(app);
+    return json(res, 200, list.map((d: any) => ({ name: d.name, status: d.status, ssl: d.certificatesStatus })));
+  }
+  if (kind === 'domain') {
+    const domain = String(url.searchParams.get('d') ?? '').trim().toLowerCase();
+    if (!validDomain(domain)) return json(res, 400, { error: 'نام دامنه معتبر نیست؛ مثل shop.ir یا www.shop.com بنویسید.' });
+    const method = url.searchParams.get('method');
+    return json(res, 200, await domainStatus(ctx.client, app, domain, { method: method === 'records' || method === 'liara-dns' ? method : undefined }));
+  }
   json(res, 404, { error: 'not found' });
 }
 
@@ -381,7 +392,7 @@ const server = createServer(async (req, res) => {
     }
     if (!authorized(req)) return json(res, 401, { error: 'login required' });
     if (url.pathname.startsWith('/api/source/') || url.pathname.startsWith('/api/wizard/')) return await wizard(req, res, url);
-    const appRoute = req.method === 'GET' && url.pathname.match(/^\/api\/apps\/([^/]+)\/(metrics|logs|releases)$/);
+    const appRoute = req.method === 'GET' && url.pathname.match(/^\/api\/apps\/([^/]+)\/(metrics|logs|releases|domains|domain)$/);
     // awaited so a Liara error reaches the catch below instead of crashing the server
     if (appRoute) return await appData(res, decodeURIComponent(appRoute[1]), appRoute[2], url);
     if (url.pathname === '/api/incidents' || url.pathname.startsWith('/api/incidents/')) return await incidents(req, res, url);

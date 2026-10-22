@@ -661,6 +661,17 @@ input::placeholder { color: var(--text-3); }
   .inc-row .inc-tags { width: 100%; }
 }
 
+/* ---------- domains ---------- */
+.copy-row { display: flex; align-items: stretch; gap: 8px; }
+.copy-value { flex: 1; min-width: 0; display: flex; align-items: center; min-height: var(--control-h); padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-2); overflow-x: auto; white-space: nowrap; font-size: 13px; }
+.record { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.record.ok { border-color: #b4e3c7; background: var(--success-soft); }
+.record-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.record-head b { flex: 1 1 140px; }
+.tl .wait .st { background: var(--warning-soft); color: var(--warning); }
+.dom-steps .chip-i { margin-inline-start: 6px; }
+.dom-methods .source { min-height: var(--control-h); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }

@@ -79,6 +79,7 @@
         <a href="#/apps" data-route="apps"><svg class="ico"><use href="#i-server"/></svg><span>سرویس‌ها</span></a>
         <a href="#/monitor" data-route="monitor"><svg class="ico"><use href="#i-pulse"/></svg><span>مانیتورینگ</span></a>
         <a href="#/logs" data-route="logs"><svg class="ico"><use href="#i-file"/></svg><span>لاگ‌ها</span></a>
+        <a href="#/domains" data-route="domains"><svg class="ico"><use href="#i-globe"/></svg><span>دامنه و DNS</span></a>
         <a href="#/incidents" data-route="incidents"><svg class="ico"><use href="#i-bug"/></svg><span>حوادث</span><b class="count warn" data-open-incidents hidden></b></a>
         <a href="#/approvals" data-route="approvals"><svg class="ico"><use href="#i-shield"/></svg><span>تأییدها</span><b class="count" data-count hidden></b></a>
         <a href="#/settings" data-route="settings"><svg class="ico"><use href="#i-gear"/></svg><span>تنظیمات</span></a>
@@ -153,6 +154,11 @@
         <!-- Services list and app pages (C. monitoring, logs, releases) -->
         <section class="page" data-page="apps" aria-label="سرویس‌ها" hidden>
           <div id="apps-view" class="stack"></div>
+        </section>
+
+        <!-- F. Domain assistant -->
+        <section class="page" data-page="domains" aria-label="دامنه و DNS" hidden>
+          <div id="domains-view" class="stack"></div>
         </section>
 
         <!-- D. Incident workspace and G. incident history -->
@@ -243,5 +249,6 @@
   <script src="/wizard.js"></script>
   <script src="/apps.js"></script>
   <script src="/incidents.js"></script>
+  <script src="/domains.js"></script>
 </body>
 </html>

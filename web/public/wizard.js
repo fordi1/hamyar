@@ -458,11 +458,7 @@ function bindDeploy() {
     state.ai ? send(prompt) : quick(prompt, 'diagnose');
   });
   $('#copy-url')?.addEventListener('click', () => navigator.clipboard.writeText(wiz.run.result.url || `https://${wiz.app}.liara.run`).then(() => toast('آدرس کپی شد.')));
-  $('#next-domain')?.addEventListener('click', () => {
-    location.hash = '#/';
-    const prompt = `می‌خواهم دامنه‌ی خودم را به ${wiz.app} وصل کنم.`;
-    state.ai ? send(prompt) : quick(prompt, 'check_domain');
-  });
+  $('#next-domain')?.addEventListener('click', () => (location.hash = `#/domains/${encodeURIComponent(wiz.app)}`));
   $('#next-watch')?.addEventListener('click', async () => {
     await selectApp(wiz.app).catch(() => {});
     $('#watch-toggle').checked = true;

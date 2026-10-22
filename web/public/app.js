@@ -613,7 +613,7 @@ $('#login-form').onsubmit = async (e) => {
 
 // ---------- routes and the status sheet ----------
 
-const ROUTES = ['home', 'deploy', 'apps', 'incidents', 'approvals', 'settings'];
+const ROUTES = ['home', 'deploy', 'apps', 'domains', 'incidents', 'approvals', 'settings'];
 
 function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
@@ -635,6 +635,7 @@ function route() {
   if (page === 'deploy') window.renderWizard?.();
   if (page === 'apps') window.renderApps?.(parts[1], parts[2]);
   if (page === 'incidents') window.renderIncidents?.(parts[1]);
+  if (page === 'domains') window.renderDomains?.(parts[1], parts[2]);
   // move focus for keyboard and screen-reader users, except on first load
   if (state.routed) $('#view').focus({ preventScroll: true });
   state.routed = true;

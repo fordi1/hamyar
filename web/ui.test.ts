@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const pub = join(__dirname, 'public');
 const html = readFileSync(join(pub, 'index.html'), 'utf8');
-const scripts = ['app.js', 'wizard.js', 'apps.js', 'incidents.js'].map((f) => ({ f, src: readFileSync(join(pub, f), 'utf8') }));
+const scripts = ['app.js', 'wizard.js', 'apps.js', 'incidents.js', 'domains.js'].map((f) => ({ f, src: readFileSync(join(pub, f), 'utf8') }));
 const allSrc = scripts.map((s) => s.src).join('\n');
 
 const idsIn = (text: string) => new Set([...text.matchAll(/\bid="([a-z0-9-]+)"/g)].map((m) => m[1]));

@@ -5,6 +5,7 @@ import { runAction, type ActionResult } from './actions.js';
 import type { LiaraClient } from './liara-client.js';
 import type { Policy } from './policy.js';
 import { clusterLogs, isErrorLine } from './sre/cluster.js';
+import { validDomain } from './domain-assistant.js';
 import { normalizeLogs, normalizeReleases, normalizeSeries } from './sre/collect.js';
 import type { Point } from './sre/snapshot.js';
 
@@ -19,15 +20,23 @@ export const validAppName = (name: string) => /^[a-z0-9][a-z0-9-]{1,62}$/.test(n
 // ---------- direct app actions ----------
 
 type Ctx = { client: LiaraClient; policy: Policy };
-type DirectAction = (typeof DIRECT_ACTIONS)[number];
+// Steps of the domain assistant, requested the same way.
+export const DOMAIN_ACTIONS = ['add_domain', 'use_liara_dns', 'create_dns_records', 'enable_ssl'] as const;
+type DirectAction = (typeof DIRECT_ACTIONS)[number] | (typeof DOMAIN_ACTIONS)[number];
+const ALLOWED: readonly string[] = [...DIRECT_ACTIONS, ...DOMAIN_ACTIONS];
 
-// A button on the app page: files an approval request (marked `direct` so the dashboard
-// runs it once a human approves; nothing else waits for it).
+// A button on the app or domain page: files an approval request (marked `direct` so the
+// dashboard runs it once a human approves; nothing else waits for it).
 export async function requestAppAction(ctx: Ctx, tool: string, args: Record<string, unknown>): Promise<ActionResult> {
-  if (!DIRECT_ACTIONS.includes(tool as DirectAction)) throw new Error(`«${tool}» از این صفحه قابل اجرا نیست.`);
+  if (!ALLOWED.includes(tool)) throw new Error(`«${tool}» از این صفحه قابل اجرا نیست.`);
   const app = String(args.app ?? '');
   if (!validAppName(app)) throw new Error('نام برنامه معتبر نیست.');
   const clean: Record<string, unknown> = { app, direct: true };
+  if ((DOMAIN_ACTIONS as readonly string[]).includes(tool)) {
+    const domain = String(args.domain ?? '').trim().toLowerCase();
+    if (!validDomain(domain)) throw new Error('نام دامنه معتبر نیست؛ مثل shop.ir یا www.shop.com بنویسید.');
+    clean.domain = domain;
+  }
   if (tool === 'rollback') {
     if (typeof args.releaseID !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(args.releaseID)) throw new Error('نسخه‌ی مقصد برای بازگشت مشخص نیست.');
     clean.releaseID = args.releaseID;
@@ -38,7 +47,7 @@ export async function requestAppAction(ctx: Ctx, tool: string, args: Record<stri
 // Called right after the human approved a direct request in the dashboard.
 export async function runApprovedAppAction(ctx: Ctx, id: string): Promise<ActionResult> {
   const record = ctx.policy.approvals.get(id);
-  if (!record || record.source !== 'dashboard' || !record.args.direct || !DIRECT_ACTIONS.includes(record.tool as DirectAction)) {
+  if (!record || record.source !== 'dashboard' || !record.args.direct || !ALLOWED.includes(record.tool)) {
     throw new Error('این درخواست از صفحه‌ی برنامه ثبت نشده است.');
   }
   if (record.status !== 'approved') throw new Error('این درخواست تأیید نشده یا قبلاً اجرا شده است.');

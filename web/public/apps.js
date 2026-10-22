@@ -135,7 +135,8 @@ async function loadHeader(app) {
 
 // ---------- actions: request → approval card → run → result ----------
 
-async function requestAction(tool, args, box = $('#app-action-box')) {
+// onDone(ok) runs when the approved action finished (the domain page re-checks its status)
+async function requestAction(tool, args, box = $('#app-action-box'), onDone) {
   box.innerHTML = `<div class="op-status"><span class="spin2"></span>در حال آماده‌سازی درخواست…</div>`;
   try {
     const res = await api('/api/action/request', { method: 'POST', body: { tool, args } });
@@ -143,12 +144,13 @@ async function requestAction(tool, args, box = $('#app-action-box')) {
     if (!res.ok) throw new Error(data.error);
     if (data.status === 'done') {
       box.innerHTML = `<div class="op-status ok">${icon('check')}انجام شد (در حالت خودکار محدود، بدون نیاز به تأیید).</div>`;
-      return loadHeader(args.app);
+      onDone?.(true);
+      return $('#app-health') ? loadHeader(args.app) : undefined;
     }
     box.innerHTML = '';
     const card = approvalCard(data, box);
     card.querySelector('.approval-head').insertAdjacentHTML('beforeend', `<span class="badge source">#${esc(data.id)}</span>`);
-    card.querySelector('.approve').addEventListener('click', () => watchOperation(data.id, args.app, box, card));
+    card.querySelector('.approve').addEventListener('click', () => watchOperation(data.id, args.app, box, card, onDone));
     loadInbox();
   } catch (err) {
     if (err.message !== 'login required') box.innerHTML = failView(err);
@@ -156,7 +158,7 @@ async function requestAction(tool, args, box = $('#app-action-box')) {
 }
 
 // After approval the server runs the action; follow it through the operations store.
-function watchOperation(approvalId, app, box, card) {
+function watchOperation(approvalId, app, box, card, onDone) {
   const status = document.createElement('div');
   status.className = 'op-status';
   status.innerHTML = '<span class="spin2"></span>تأیید شد؛ در حال اجرا روی لیارا…';
@@ -173,7 +175,8 @@ function watchOperation(approvalId, app, box, card) {
         status.className = `op-status ${ok ? 'ok' : 'bad'}`;
         status.innerHTML = `${icon(ok ? 'check' : 'x')}${ok ? 'انجام شد' : `ناموفق: ${esc(op.summary || PHASE_LABELS[op.state] || op.state)}`}`;
         loadTimeline();
-        if (state.app === app) loadHeader(app);
+        if (state.app === app && $('#app-health')) loadHeader(app);
+        onDone?.(ok);
         return;
       }
       if (op?.events?.length) status.innerHTML = `<span class="spin2"></span>${esc(PHASE_LABELS[op.events.at(-1).phase] || op.events.at(-1).phase)}${op.events.at(-1).message ? ` · ${esc(op.events.at(-1).message)}` : ''}`;

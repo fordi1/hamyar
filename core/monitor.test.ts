@@ -37,6 +37,14 @@ describe('requestAppAction / runApprovedAppAction', () => {
     await expect(requestAppAction(c, 'rollback', { app: 'shop' })).rejects.toThrow(/نسخه/);
   });
 
+  it('accepts domain steps with a valid domain and passes the domain on', async () => {
+    const { ctx: c } = ctx();
+    await expect(requestAppAction(c, 'add_domain', { app: 'shop', domain: 'http://x' })).rejects.toThrow(/دامنه/);
+    const r = await requestAppAction(c, 'enable_ssl', { app: 'shop', domain: 'shop.ir' });
+    if (r.status !== 'needs_approval') throw new Error('expected approval');
+    expect(c.policy.approvals.get(r.approvalId)?.args).toMatchObject({ app: 'shop', domain: 'shop.ir', direct: true });
+  });
+
   it('will not run a request filed by Claude Code from the dashboard path', async () => {
     const { ctx: c, calls } = ctx();
     const other = c.policy.approvals.request({ tool: 'restart_app', tier: 'T1', args: { app: 'shop' }, preview: { title: 't', lines: [] } as any, source: 'mcp' });
