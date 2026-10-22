@@ -69,13 +69,13 @@ function detectPlatform(dir: string, reasons: string[]): { platform: Platform; c
   const has = (name: string) => existsSync(join(dir, name));
   const hasDocker = has('Dockerfile');
   const conflict = (marker: string, platform: Platform) =>
-    hasDocker ? `Both ${marker} and Dockerfile exist; using ${platform}. Choose docker if the Dockerfile should be used.` : undefined;
+    hasDocker ? `هم ${marker} هست و هم Dockerfile؛ پلتفرم ${platform} انتخاب شد. اگر می‌خواهید Dockerfile استفاده شود، پلتفرم docker را انتخاب کنید.` : undefined;
 
   const programCs = findFiles(dir, (n) => n === 'Program.cs' || n === 'Startup.cs', 5)[0];
   if (programCs) {
     const csDir = join(programCs, '..');
     if (readdirSync(csDir).some((n) => n.endsWith('.csproj'))) {
-      reasons.push('Program.cs and a .csproj file found → dotnet');
+      reasons.push('فایل Program.cs و یک ‎.csproj‎ پیدا شد ← dotnet');
       return { platform: 'dotnet', conflict: conflict('*.csproj', 'dotnet') };
     }
   }
@@ -84,20 +84,20 @@ function detectPlatform(dir: string, reasons: string[]): { platform: Platform; c
     const require = readJson(join(dir, 'composer.json')).require ?? {};
     const c = conflict('composer.json', 'php');
     if (require['laravel/framework'] || require['laravel/lumen-framework']) {
-      reasons.push('composer.json requires laravel/framework → laravel');
+      reasons.push('composer.json به laravel/framework وابسته است ← laravel');
       return { platform: 'laravel', conflict: c };
     }
-    reasons.push('composer.json found without Laravel → php');
+    reasons.push('composer.json بدون Laravel پیدا شد ← php');
     return { platform: 'php', conflict: c };
   }
 
   if (has('index.php')) {
-    reasons.push('index.php found → php');
+    reasons.push('index.php پیدا شد ← php');
     return { platform: 'php' };
   }
 
   if (has('pyproject.toml') || has('poetry')) {
-    reasons.push('pyproject.toml found → python');
+    reasons.push('pyproject.toml پیدا شد ← python');
     return { platform: 'python' };
   }
 
@@ -105,14 +105,14 @@ function detectPlatform(dir: string, reasons: string[]): { platform: Platform; c
     if (!has(file)) continue;
     const text = readText(join(dir, file));
     if (/django/i.test(text)) {
-      reasons.push(`${file} lists Django → django`);
+      reasons.push(`${file} شامل Django است ← django`);
       return { platform: 'django' };
     }
     if (/flask/i.test(text)) {
-      reasons.push(`${file} lists Flask → flask`);
+      reasons.push(`${file} شامل Flask است ← flask`);
       return { platform: 'flask' };
     }
-    reasons.push(`${file} found → python`);
+    reasons.push(`${file} پیدا شد ← python`);
     return { platform: 'python' };
   }
 
@@ -122,41 +122,41 @@ function detectPlatform(dir: string, reasons: string[]): { platform: Platform; c
     const dev = pkg.devDependencies ?? {};
     const c = conflict('package.json', 'node');
     if (deps.next) {
-      reasons.push('package.json depends on next → next');
+      reasons.push('package.json به next وابسته است ← next');
       return { platform: 'next', conflict: c };
     }
     if (deps['@angular/core']) {
-      reasons.push('package.json depends on @angular/core → angular');
+      reasons.push('package.json به ‎@angular/core‎ وابسته است ← angular');
       return { platform: 'angular', conflict: c };
     }
     if (dev['@vue/cli-service'] || (deps.vue && dev.vite)) {
-      reasons.push('package.json uses vue → vue');
+      reasons.push('package.json از vue استفاده می‌کند ← vue');
       return { platform: 'vue', conflict: c };
     }
     if (deps['react-scripts'] || (dev.vite && deps.react) || deps.preact) {
-      reasons.push('package.json is a React single-page app → react');
+      reasons.push('package.json یک برنامه‌ی تک‌صفحه‌ای React است ← react');
       return { platform: 'react', conflict: c };
     }
-    reasons.push('package.json without a frontend framework → node');
+    reasons.push('package.json بدون فریم‌ورک فرانت‌اند ← node');
     return { platform: 'node', conflict: c };
   }
 
   if (has('wp-content')) {
-    reasons.push('wp-content folder found → wordpress');
+    reasons.push('پوشه‌ی wp-content پیدا شد ← wordpress');
     return { platform: 'wordpress', conflict: conflict('wp-content', 'wordpress') };
   }
 
   if (has('go.mod')) {
-    reasons.push('go.mod found → go');
+    reasons.push('go.mod پیدا شد ← go');
     return { platform: 'go', conflict: conflict('go.mod', 'go') };
   }
 
   if (hasDocker) {
-    reasons.push('Dockerfile found → docker');
+    reasons.push('Dockerfile پیدا شد ← docker');
     return { platform: 'docker' };
   }
 
-  reasons.push('no server-side project file found → static');
+  reasons.push('فایل پروژه‌ی سمت سرور پیدا نشد ← static (سایت ایستا)');
   return { platform: 'static' };
 }
 
@@ -189,14 +189,14 @@ export function detectProject(dir: string): Detection {
       const found = hardcodedNodePort(dir, pkg);
       if (found) {
         port = found;
-        reasons.push(`the code listens on port ${found}`);
+        reasons.push(`کد روی پورت ${found} گوش می‌دهد`);
       }
-      if (!startCommand) warnings.push('package.json has no "start" script; Liara runs `npm start` for node apps.');
+      if (!startCommand) warnings.push('package.json اسکریپت «start» ندارد؛ لیارا برنامه‌های node را با npm start اجرا می‌کند.');
     }
   }
 
   if (existsSync(join(dir, '.env'))) {
-    warnings.push('A .env file is in the project and would be uploaded with the code. Move its values to Liara environment variables instead.');
+    warnings.push('پروژه فایل ‎.env‎ دارد. همیار آن را آپلود نمی‌کند (برای امنیت)؛ مقدارهای لازم را در مرحله‌ی تنظیمات وارد کنید تا به‌عنوان متغیر محیطی روی لیارا تنظیم شوند.');
   }
 
   return { platform, port, startCommand, version, reasons, warnings, conflict };

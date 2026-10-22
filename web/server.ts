@@ -8,8 +8,9 @@
 import { config } from 'dotenv';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
-import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LiaraClient } from '../core/liara-client.js';
 import { Policy } from '../core/policy.js';
@@ -19,6 +20,8 @@ import { buildTools, llmFromEnv, runAgent, type ApprovalDecision, type ChatMessa
 import { appUrl, probe } from '../core/deployer.js';
 import { normalizeSeries } from '../core/sre/collect.js';
 import { resumeOperations } from '../core/operations.js';
+import { MAX_ARCHIVE_BYTES, SourceError, SourceStore, extractZip, fetchGithub, parseGithubUrl } from '../core/sources.js';
+import { WizardError, analyzeSource, cancelDeploy, requestDeploy, startDeploy } from '../core/wizard.js';
 import { LoginLimiter, SECURITY_HEADERS, SessionStore, checkMutationRequest, passwordProblem } from './security.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,6 +43,7 @@ const ctx: OpsContext = {
   boards: new Map(),
 };
 const tools = buildTools(ctx);
+const sources = new SourceStore(join(process.env.HAMYAR_STATE_DIR || join(root, '.hamyar'), 'sources'));
 
 const llm = llmFromEnv();
 
@@ -71,6 +75,19 @@ async function body(req: IncomingMessage): Promise<any> {
     if (raw.length > 1_000_000) throw new Error('body too large');
   }
   return raw ? JSON.parse(raw) : {};
+}
+
+async function rawBody(req: IncomingMessage, max: number): Promise<Buffer> {
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > max) throw new SourceError(`حجم فایل بیشتر از ${Math.round(max / 1024 / 1024)} مگابایت است.`);
+  const parts: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > max) throw new SourceError(`حجم فایل بیشتر از ${Math.round(max / 1024 / 1024)} مگابایت است.`);
+    parts.push(chunk);
+  }
+  return Buffer.concat(parts);
 }
 
 const MIME: Record<string, string> = {
@@ -177,12 +194,96 @@ async function quick(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+// ---------- deploy wizard: source intake, analysis, approval, run ----------
+
+const publicSource = (s: { id: string; origin: string; label: string }) => ({ id: s.id, origin: s.origin, label: s.label });
+
+function sourceFor(id: unknown) {
+  const s = sources.get(String(id ?? ''));
+  if (!s) throw new WizardError('کد این پروژه دیگر در دسترس نیست؛ از مرحله‌ی اول دوباره شروع کنید.');
+  return s;
+}
+
+async function wizard(req: IncomingMessage, res: ServerResponse, url: URL) {
+  const route = `${req.method} ${url.pathname}`;
+  try {
+    switch (route) {
+      case 'POST /api/source/local': {
+        // a path on this machine only makes sense when the dashboard runs on it
+        if (PASSWORD) return json(res, 403, { error: 'پروژه‌ی محلی فقط وقتی داشبورد روی همین کامپیوتر اجرا می‌شود در دسترس است.' });
+        const { path } = await body(req);
+        const dir = resolve(String(path ?? '').trim());
+        if (!path || !existsSync(dir) || !statSync(dir).isDirectory()) throw new SourceError('این پوشه پیدا نشد. مسیر کامل پوشه‌ی پروژه را وارد کنید.');
+        return json(res, 200, { source: publicSource(sources.register('local', basename(dir), dir)) });
+      }
+      case 'POST /api/source/github': {
+        const { url: repoUrl, branch } = await body(req);
+        const ref = parseGithubUrl(String(repoUrl ?? ''));
+        if (branch) ref.branch = String(branch).trim();
+        const s = sources.create('github', `${ref.owner}/${ref.repo}${ref.branch ? `@${ref.branch}` : ''}`);
+        try {
+          await fetchGithub(ref, s.dir);
+        } catch (err) {
+          sources.remove(s);
+          throw err;
+        }
+        return json(res, 200, { source: publicSource(s) });
+      }
+      case 'POST /api/source/zip': {
+        const name = basename(String(url.searchParams.get('name') ?? 'project.zip')).slice(0, 80);
+        const data = await rawBody(req, MAX_ARCHIVE_BYTES);
+        const s = sources.create('zip', name);
+        try {
+          await extractZip(data, s.dir);
+        } catch (err) {
+          sources.remove(s);
+          throw err;
+        }
+        return json(res, 200, { source: publicSource(s) });
+      }
+      case 'POST /api/wizard/analyze': {
+        const { sourceId, subdir = '' } = await body(req);
+        const s = sourceFor(sourceId);
+        const dir = sources.projectDir(s, String(subdir));
+        const hint = String(subdir).split('/').filter(Boolean).pop() || s.label.replace(/@.*$/, '').split('/').pop() || 'my-app';
+        return json(res, 200, await analyzeSource(ctx, dir, hint));
+      }
+      case 'POST /api/wizard/request': {
+        const { sourceId, subdir = '', app, planID, keys = [] } = await body(req);
+        const dir = sources.projectDir(sourceFor(sourceId), String(subdir));
+        return json(res, 200, await requestDeploy(ctx, { dir, app: String(app ?? ''), planID: String(planID ?? ''), keys: Array.isArray(keys) ? keys.map(String) : [] }));
+      }
+      case 'POST /api/wizard/cancel': {
+        const { id, reason } = await body(req);
+        cancelDeploy(ctx, String(id ?? ''), String(reason || 'کاربر برگشت و تنظیمات را ویرایش کرد'));
+        return json(res, 200, { ok: true });
+      }
+      case 'POST /api/wizard/start': {
+        const { id, values = {} } = await body(req);
+        res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+        const send = (e: unknown) => res.write(JSON.stringify(e) + '\n');
+        try {
+          const result = await startDeploy(ctx, String(id ?? ''), values && typeof values === 'object' ? values : {}, (e) => send({ type: 'progress', phase: e.phase, message: e.message }));
+          send(result.status === 'done' ? { type: 'done', result: result.result } : { type: 'error', text: 'error' in result ? result.error : result.status });
+        } catch (err: any) {
+          send({ type: 'error', text: err?.explanation ?? err?.message ?? String(err) });
+        }
+        return res.end();
+      }
+    }
+    json(res, 404, { error: 'not found' });
+  } catch (err: any) {
+    const known = err instanceof SourceError || err instanceof WizardError;
+    json(res, known ? 400 : 500, { error: err?.explanation ?? err?.message ?? String(err) });
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   try {
     if (!url.pathname.startsWith('/api/')) return serveStatic(req, res);
 
-    const refused = checkMutationRequest(req);
+    const refused = checkMutationRequest(req, { allowZip: url.pathname === '/api/source/zip' });
     if (refused) return json(res, 403, { error: refused });
 
     if (url.pathname === '/api/login' && req.method === 'POST') {
@@ -206,10 +307,11 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
     if (!authorized(req)) return json(res, 401, { error: 'login required' });
+    if (url.pathname.startsWith('/api/source/') || url.pathname.startsWith('/api/wizard/')) return wizard(req, res, url);
 
     switch (`${req.method} ${url.pathname}`) {
       case 'GET /api/config':
-        return json(res, 200, { mode: ctx.policy.mode, ai: Boolean(llm), provider: llm?.provider, model: llm?.model, auth: Boolean(PASSWORD) });
+        return json(res, 200, { mode: ctx.policy.mode, ai: Boolean(llm), provider: llm?.provider, model: llm?.model, auth: Boolean(PASSWORD), local: !PASSWORD });
       case 'GET /api/me': {
         // only what the top bar shows; never national code, phone or tokens
         const [me, balance] = await Promise.all([ctx.client.me(), ctx.client.balance()]);
@@ -239,6 +341,7 @@ const server = createServer(async (req, res) => {
           id: r.id, tool: r.tool, tier: r.tier, preview: r.preview, source: r.source, expiresAt: r.expiresAt,
           needsValues: r.tool === 'set_env' && Array.isArray(r.args.keys) ? r.args.keys : undefined,
           waiting: pending.has(r.id),
+          wizard: Boolean(r.args.wizard),
         }));
         return json(res, 200, list);
       }
@@ -249,6 +352,8 @@ const server = createServer(async (req, res) => {
         const needsValues = record.tool === 'set_env' && Array.isArray(record.args.keys);
         // a values card can only be applied by the agent run that is waiting for it
         if (needsValues && approved && !pending.has(record.id)) return json(res, 409, { error: 'این درخواست به گفت‌وگوی دیگری تعلق دارد؛ دوباره از همیار بخواهید.' });
+        // a wizard deploy carries its env values with the approve click on the wizard page
+        if (record.args.wizard && approved) return json(res, 409, { error: 'این دیپلوی را از صفحه‌ی «دیپلوی جدید» تأیید کنید؛ مقدار متغیرها همان‌جا وارد شده است.' });
         const decided = ctx.policy.approvals.decide(record.id, { approved: Boolean(approved), by: 'user', channel: 'dashboard', reason });
         ctx.policy.audit({ tool: decided.tool, tier: decided.tier, args: decided.args, outcome: decided.status === 'approved' ? 'approved' : 'rejected', approvedBy: 'user (dashboard)', approvalId: decided.id, detail: reason });
         const resolveDecision = pending.get(record.id);
@@ -278,6 +383,7 @@ const server = createServer(async (req, res) => {
 // that were in flight are followed to the end on Liara in the background.
 const orphaned = ctx.policy.approvals.revokeAll('داشبورد ری‌استارت شد و گفت‌وگوی این درخواست قطع شد؛ دوباره از همیار بخواهید.', (r) => r.source === 'dashboard');
 if (orphaned) ctx.policy.audit({ tool: '*', tier: 'T2', args: {}, outcome: 'revoked', detail: `${orphaned} درخواست تأیید داشبورد بعد از ری‌استارت لغو شد` });
+sources.cleanup();
 resumeOperations(ctx.policy.operations, ctx.client).catch((err) => console.error('resume failed:', err?.message ?? err));
 
 server.listen(PORT, HOST, () => {

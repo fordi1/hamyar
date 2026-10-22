@@ -41,6 +41,12 @@
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6.2 0C6.6 2.8 5.6 3.1 5.6 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.2 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
     <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
     <symbol id="i-ram" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11v2M11 11v2M15 11v2M7 17v2M12 17v2M17 17v2"/></symbol>
     <symbol id="mascot" viewBox="0 0 120 120">
@@ -68,6 +74,7 @@
       </a>
       <nav class="nav" aria-label="منوی اصلی">
         <a href="#/" data-route="home"><svg class="ico"><use href="#i-home"/></svg><span>داشبورد</span></a>
+        <a href="#/deploy" data-route="deploy"><svg class="ico"><use href="#i-rocket"/></svg><span>دیپلوی جدید</span></a>
         <a href="#/approvals" data-route="approvals"><svg class="ico"><use href="#i-shield"/></svg><span>تأییدها</span><b class="count" data-count hidden></b></a>
         <a href="#/settings" data-route="settings"><svg class="ico"><use href="#i-gear"/></svg><span>تنظیمات</span></a>
       </nav>
@@ -116,7 +123,7 @@
               <h1>سلام! من همیار هستم</h1>
               <p>پروژه‌تان را روی لیارا بالا می‌آورم، سالم نگهش می‌دارم، و اگر سایت کند شد یا خطا داد علتش را با مدرک پیدا می‌کنم. هر تغییری اول از شما اجازه می‌گیرد.</p>
               <div class="tiles" id="tiles">
-                <button class="tile" type="button" data-prompt="پوشه‌ی demo-app رو روی لیارا بالا بیار" data-quick="liara_overview"><svg class="ico"><use href="#i-rocket"/></svg><span>دیپلوی پروژه</span></button>
+                <a class="tile" href="#/deploy"><svg class="ico"><use href="#i-rocket"/></svg><span>دیپلوی پروژه</span></a>
                 <button class="tile" type="button" data-prompt="وضعیت برنامه‌ام چطوره؟" data-quick="app_status"><svg class="ico"><use href="#i-pulse"/></svg><span>وضعیت سرویس</span></button>
                 <button class="tile" type="button" data-prompt="سایتم مشکل داره، بررسی کن چرا." data-quick="diagnose"><svg class="ico"><use href="#i-bug"/></svg><span>تشخیص مشکل</span></button>
                 <button class="tile" type="button" data-prompt="نسخه‌های اخیر برنامه‌ام رو نشون بده و بگو کدوم سالمه." data-quick="app_status"><svg class="ico"><use href="#i-server"/></svg><span>مدیریت دیپلوی</span></button>
@@ -131,6 +138,11 @@
               <button class="btn primary send" type="submit" id="send-btn" aria-label="ارسال"><svg class="ico"><use href="#i-send"/></svg></button>
             </div>
           </form>
+        </section>
+
+        <!-- B. Intelligent deployment: source → analysis and plan → settings → approval and progress -->
+        <section class="page" data-page="deploy" aria-label="دیپلوی پروژه‌ی جدید" hidden>
+          <div class="wizard" id="wizard"></div>
         </section>
 
         <!-- E. Approvals inbox: requests from this dashboard and from Claude Code (MCP) -->
@@ -171,6 +183,7 @@
 
       <nav class="tabbar" aria-label="منوی پایین">
         <a href="#/" data-route="home"><svg class="ico"><use href="#i-home"/></svg>خانه</a>
+        <a href="#/deploy" data-route="deploy"><svg class="ico"><use href="#i-rocket"/></svg>دیپلوی</a>
         <button type="button" data-open-status><svg class="ico"><use href="#i-pulse"/></svg>وضعیت</button>
         <a href="#/approvals" data-route="approvals"><svg class="ico"><use href="#i-shield"/></svg>تأییدها<b class="count" data-count hidden></b></a>
         <a href="#/settings" data-route="settings"><svg class="ico"><use href="#i-gear"/></svg>تنظیمات</a>
@@ -212,5 +225,6 @@
   </div>
 
   <script src="/app.js"></script>
+  <script src="/wizard.js"></script>
 </body>
 </html>

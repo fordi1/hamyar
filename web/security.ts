@@ -74,7 +74,9 @@ export class LoginLimiter {
 
 // State-changing requests must be same-origin JSON: browsers cannot send a cross-site
 // JSON request without a CORS preflight, which this server never grants.
-export function checkMutationRequest(req: { method?: string; headers: Record<string, string | string[] | undefined> }): string | undefined {
+// `allowZip`: the upload route also takes application/zip, which, like JSON, a cross-site
+// form cannot send without a CORS preflight.
+export function checkMutationRequest(req: { method?: string; headers: Record<string, string | string[] | undefined> }, opts: { allowZip?: boolean } = {}): string | undefined {
   if (!req.method || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return undefined;
   const origin = req.headers.origin as string | undefined;
   const host = req.headers.host as string | undefined;
@@ -88,6 +90,7 @@ export function checkMutationRequest(req: { method?: string; headers: Record<str
     if (originHost !== host) return 'cross-origin request refused (origin)';
   }
   const type = String(req.headers['content-type'] ?? '');
+  if (opts.allowZip && type.startsWith('application/zip')) return undefined;
   if (!type.startsWith('application/json')) return 'requests that change state must send JSON';
   return undefined;
 }

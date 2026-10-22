@@ -65,6 +65,15 @@ describe('checkMutationRequest', () => {
   it('ignores safe methods', () => {
     expect(checkMutationRequest({ method: 'GET', headers: { host: 'x' } })).toBeUndefined();
   });
+
+  it('accepts a same-origin zip upload only where the route allows it', () => {
+    const zip = req({ origin: 'https://hamyar.liara.run', 'content-type': 'application/zip' });
+    expect(checkMutationRequest(zip, { allowZip: true })).toBeUndefined();
+    expect(checkMutationRequest(zip)).toMatch(/JSON/);
+    expect(checkMutationRequest(req({ origin: 'https://evil.example', 'content-type': 'application/zip' }), { allowZip: true })).toMatch(/origin/i);
+    // a form can send text/plain cross-site without a preflight; the zip route must still refuse it
+    expect(checkMutationRequest(req({ origin: 'https://hamyar.liara.run', 'content-type': 'text/plain' }), { allowZip: true })).toMatch(/JSON/);
+  });
 });
 
 describe('security headers and password policy', () => {

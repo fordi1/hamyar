@@ -600,7 +600,7 @@ $('#login-form').onsubmit = async (e) => {
 
 // ---------- routes and the status sheet ----------
 
-const ROUTES = ['home', 'approvals', 'settings'];
+const ROUTES = ['home', 'deploy', 'approvals', 'settings'];
 
 function route() {
   const name = location.hash.replace(/^#\/?/, '').split('/')[0] || 'home';
@@ -610,6 +610,7 @@ function route() {
   closeStatus();
   if (page === 'approvals') loadTimeline();
   if (page === 'settings') renderSettings();
+  if (page === 'deploy') window.renderWizard?.();
   // move focus for keyboard and screen-reader users, except on first load
   if (state.routed) $('#view').focus({ preventScroll: true });
   state.routed = true;
@@ -651,7 +652,7 @@ $('#panel-close').onclick = closeStatus;
 $('#scrim').onclick = closeStatus;
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeStatus());
 
-document.querySelectorAll('.tile').forEach((tile) => {
+document.querySelectorAll('button.tile').forEach((tile) => {
   tile.onclick = () => (state.ai ? send(tile.dataset.prompt) : quick(tile.textContent.trim(), tile.dataset.quick));
 });
 
@@ -715,6 +716,11 @@ async function loadInbox() {
       if (document.querySelector(`.approval[data-id="${r.id}"]`)) continue;
       const el = approvalCard(r, box);
       el.querySelector('.approval-head').insertAdjacentHTML('beforeend', `<span class="badge source">${esc(SOURCE_LABEL[r.source] || r.source)} · #${esc(r.id)}</span>`);
+      // a wizard deploy is approved on its own page, where the env values are typed
+      if (r.wizard) {
+        el.querySelector('.approve').hidden = true;
+        el.querySelector('.main-actions').insertAdjacentHTML('afterbegin', `<a class="btn primary" href="#/deploy">ادامه در صفحه‌ی دیپلوی</a>`);
+      }
     }
     $('#approvals-empty').hidden = Boolean(box.querySelector('.approval:not(.decided)'));
     document.querySelectorAll('[data-count]').forEach((b) => {
@@ -776,6 +782,8 @@ async function init() {
     $('#mode-text').title = hint;
     renderSettings();
     loadAccount().then(renderSettings);
+    // the wizard offers "local project" only when the server says so
+    if (!$('[data-page="deploy"]').hidden) window.renderWizard?.();
 
     const { apps } = await (await api('/api/apps')).json();
     const select = $('#app-select');
