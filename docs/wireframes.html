@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hamyar wireframes</title>
+<!-- Phase 2 wireframes: static, sample data only. Not the product. -->
+<style>
+@font-face { font-family: "Vazirmatn"; src: url("../web/public/fonts/Vazirmatn-Variable.woff2") format("woff2"); font-weight: 100 900; }
+:root {
+  --bg: #f6f7fd; --surface: #fff; --surface-2: #f1f3fb; --border: #e4e7f2; --border-strong: #cfd5e8;
+  --text: #161a33; --text-2: #4a5175; --text-3: #6b7293;
+  --primary: #3d4ee8; --primary-hover: #2f3fd6; --primary-soft: #eceffe;
+  --violet: #8b5cf6; --violet-soft: #f3eefe;
+  --success: #12a150; --success-soft: #e8f7ee; --warning: #c27803; --warning-soft: #fdf4e3;
+  --danger: #dc2f45; --danger-soft: #fdecee; --info: #2f80ed; --info-soft: #eaf2fe;
+  --radius-sm: 8px; --radius: 12px; --radius-lg: 16px; --radius-xl: 20px;
+  --shadow-1: 0 1px 2px rgba(22,26,51,.04), 0 1px 3px rgba(22,26,51,.06);
+  --shadow-2: 0 4px 16px rgba(61,78,232,.08);
+  --control-h: 44px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Vazirmatn, system-ui, sans-serif; background: #e9ebf5; color: var(--text); font-size: 14px; line-height: 1.7; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- document chrome (not part of the product) ---------- */
+.doc-bar { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.doc-bar h1 { font-size: 15px; margin: 0 0 0 12px; white-space: nowrap; }
+.doc-bar .note { color: var(--text-3); font-size: 12px; flex-basis: 100%; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; cursor: pointer; white-space: nowrap; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+.stage { padding: 24px 16px 64px; display: flex; justify-content: center; }
+.frame { container-type: inline-size; width: min(1280px, 100%); background: var(--bg); border-radius: 18px; box-shadow: 0 10px 40px rgba(22,26,51,.12); overflow: hidden; }
+.frame.mobile { width: 375px; max-width: 100%; border-radius: 28px; }
+.caption { max-width: 1280px; margin: 0 auto 12px; color: var(--text-2); font-size: 13px; padding: 0 16px; }
+
+/* ---------- product shell ---------- */
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr) 300px; min-height: 760px; }
+.app.no-panel { grid-template-columns: 232px minmax(0, 1fr); }
+.side { background: var(--surface); border-left: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 17px; padding: 4px 8px 16px; }
+.brand .logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--primary), var(--violet)); display: grid; place-items: center; color: #fff; }
+.nav a { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px; border-radius: 10px; color: var(--text-2); text-decoration: none; white-space: nowrap; }
+.nav a.on { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.nav a .count { margin-inline-start: auto; background: var(--danger); color: #fff; font-size: 11px; border-radius: 999px; padding: 0 7px; line-height: 20px; }
+.side .cta { margin-top: 8px; }
+.side .helper { margin-top: auto; background: var(--violet-soft); border-radius: var(--radius); padding: 12px; display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-2); }
+.side .helper b { display: block; color: var(--text); font-size: 13px; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.top { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.7); }
+.search { flex: 1; max-width: 340px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--surface-2); border-radius: 10px; color: var(--text-3); font-size: 13px; }
+.top .grow { flex: 1; }
+.iconbtn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); display: grid; place-items: center; position: relative; color: var(--text-2); }
+.iconbtn .badge { position: absolute; top: -4px; left: -4px; background: var(--danger); color: #fff; font-size: 10px; border-radius: 999px; min-width: 18px; line-height: 18px; text-align: center; }
+.account { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.account b { display: block; color: var(--text); font-size: 13px; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; font-weight: 800; }
+.app-pill { display: none; }
+.content { padding: 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.content.center { align-items: center; justify-content: center; text-align: center; }
+
+.panel { background: var(--surface); border-right: 1px solid var(--border); padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; }
+.panel h3 { margin: 0; font-size: 14px; }
+.panel .appsel { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.panel .appsel small { color: var(--text-3); display: block; }
+.tiles2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.tabbar { display: none; }
+
+/* ---------- primitives ---------- */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 16px; }
+.card h4 { margin: 0 0 4px; font-size: 15px; }
+.muted { color: var(--text-3); font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.row.between { justify-content: space-between; }
+.btn { min-height: var(--control-h); padding: 0 18px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn.danger { color: var(--danger); border-color: #f3c3ca; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--primary); }
+.btn.block { width: 100%; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--success-soft); color: var(--success); }
+.pill.warn { background: var(--warning-soft); color: var(--warning); }
+.pill.bad { background: var(--danger-soft); color: var(--danger); }
+.pill.info { background: var(--info-soft); color: var(--info); }
+.pill.violet { background: var(--violet-soft); color: var(--violet); }
+.pill.gray { background: var(--surface-2); color: var(--text-3); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.src { font-size: 11px; color: var(--text-3); }
+.metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.metric .label { font-size: 12px; color: var(--text-3); }
+.metric .val { font-size: 20px; font-weight: 800; }
+.metric .val small { font-size: 12px; color: var(--text-3); font-weight: 500; }
+.bar { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
+.bar.violet i { background: var(--violet); }
+.unavail { border: 1px dashed var(--border-strong); background: var(--surface-2); border-radius: var(--radius); padding: 12px; color: var(--text-3); font-size: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; text-align: start; }
+.field label { font-size: 13px; font-weight: 600; }
+.input { min-height: var(--control-h); border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 12px; display: flex; align-items: center; gap: 8px; background: var(--surface); color: var(--text-3); font-size: 13px; direction: ltr; justify-content: flex-end; }
+.input.rtl { direction: rtl; justify-content: flex-start; }
+.input.ok { border-color: var(--success); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; direction: ltr; unicode-bidi: isolate; }
+details summary { cursor: pointer; color: var(--primary); font-size: 13px; }
+
+/* chat */
+.msg { max-width: 80%; padding: 10px 14px; border-radius: 14px; }
+.msg.user { align-self: flex-start; background: var(--primary); color: #fff; border-end-start-radius: 4px; }
+.msg.bot { align-self: flex-end; background: var(--surface); border: 1px solid var(--border); border-end-end-radius: 4px; }
+.bot-row { display: flex; gap: 10px; align-items: flex-start; }
+.composer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 12px; display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 720px; }
+.composer .ph { color: var(--text-3); min-height: 44px; text-align: start; }
+.composer .send { width: 44px; height: 44px; border-radius: 12px; background: var(--primary); color: #fff; display: grid; place-items: center; border: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chip { min-height: 44px; padding: 0 16px; border: 1px solid var(--border); background: var(--surface); border-radius: 12px; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 13px; box-shadow: var(--shadow-1); }
+.chip .ico { color: var(--primary); }
+
+/* stepper */
+.stepper { display: flex; justify-content: space-between; position: relative; margin: 4px 24px 8px; }
+.stepper::before { content: ""; position: absolute; top: 15px; inset-inline: 30px; height: 2px; background: var(--border); }
+.step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); z-index: 1; }
+.step i { width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); display: grid; place-items: center; font-style: normal; font-weight: 700; }
+.step.on { color: var(--primary); font-weight: 700; }
+.step.on i { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 0 0 4px var(--primary-soft); }
+.step.done i { background: var(--primary); border-color: var(--primary); color: #fff; }
+.step-mobile { display: none; }
+.h-title { text-align: center; }
+.h-title h2 { margin: 0; font-size: 22px; }
+
+/* source chooser */
+.sources { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.source { border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); text-align: start; }
+.source.on { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+.source .sicon { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; color: var(--primary); }
+
+/* plans */
+.plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.plan { border: 1.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); position: relative; }
+.plan.rec { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+.plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: 13px; }
+.plan ul li { display: flex; gap: 8px; align-items: center; }
+.price { font-size: 18px; font-weight: 800; }
+.price small { font-size: 12px; color: var(--text-3); font-weight: 500; }
+
+/* timeline */
+.tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tl li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: start; padding: 8px 0; position: relative; }
+.tl li::before { content: ""; position: absolute; right: 13px; top: 34px; bottom: -6px; width: 2px; background: var(--border); }
+.tl li:last-child::before { display: none; }
+.tl .st { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); z-index: 1; }
+.tl .st.done { background: var(--success); color: #fff; }
+.tl .st.run { background: var(--primary-soft); color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.tl .st.fail { background: var(--danger); color: #fff; }
+.tl small { color: var(--text-3); display: block; }
+.tl .t { color: var(--text-3); font-size: 12px; }
+
+/* approval */
+.approval { border: 1.5px solid var(--primary); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.approval .ah { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--primary-soft); }
+.approval .ab { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.kv div { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.kv span { display: block; font-size: 11px; color: var(--text-3); }
+.kv b { font-size: 13px; }
+.diff { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13px; }
+.diff div { padding: 6px 12px; }
+.diff .ico { vertical-align: -4px; margin-inline-end: 6px; }
+.diff .add { background: var(--success-soft); }
+.diff .chg { background: var(--warning-soft); }
+
+/* charts */
+.chart { height: 150px; position: relative; }
+.chart svg { width: 100%; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-3); }
+
+/* logs */
+.logs { font-family: ui-monospace, Consolas, monospace; font-size: 12px; direction: ltr; }
+.logs .l { display: grid; grid-template-columns: 64px 60px 1fr; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); align-items: start; }
+.lvl { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; text-align: center; }
+.lvl.e { background: var(--danger-soft); color: var(--danger); }
+.lvl.w { background: var(--warning-soft); color: var(--warning); }
+.lvl.i { background: var(--info-soft); color: var(--info); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs a { padding: 10px 14px; color: var(--text-3); text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; font-size: 13px; }
+.tabs a.on { color: var(--primary); border-color: var(--primary); font-weight: 700; }
+
+/* hypothesis board */
+.hyp { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.hyp.confirmed { border-color: #a8e0bf; background: var(--success-soft); }
+.hyp.rejected { opacity: .85; background: var(--surface-2); }
+.ev { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+.ev b { color: var(--primary); font-family: ui-monospace, monospace; direction: ltr; }
+.vt { width: 100%; border-collapse: collapse; font-size: 13px; }
+.vt th, .vt td { padding: 8px; border-bottom: 1px solid var(--border); text-align: start; }
+.vt th { color: var(--text-3); font-weight: 600; font-size: 12px; }
+
+/* mascot */
+.mascot { width: 120px; height: 120px; }
+.mascot.sm { width: 34px; height: 34px; }
+
+/* ---------- responsive by container (the same rules move into the product) ---------- */
+@container (max-width: 1100px) {
+  .app, .app.no-panel { grid-template-columns: 72px minmax(0, 1fr); }
+  .panel { display: none; }
+  .side .label, .side .helper, .brand span, .nav a .count { display: none; }
+  .nav a { justify-content: center; padding: 0; }
+  .side .cta { padding: 0; }
+  .side .cta .label { display: none; }
+  .app-pill { display: inline-flex; }
+}
+@container (max-width: 700px) {
+  .app, .app.no-panel { grid-template-columns: 1fr; min-height: 720px; }
+  .side { display: none; }
+  .top { padding: 10px 12px; gap: 8px; }
+  .search, .account div { display: none; }
+  .content { padding: 16px 16px 88px; gap: 12px; }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 6px 4px 10px; }
+  .tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--text-3); text-decoration: none; min-height: 44px; justify-content: center; }
+  .tabbar a.on { color: var(--primary); font-weight: 700; }
+  .grid2, .grid3, .sources, .plans, .kv { grid-template-columns: 1fr; }
+  .grid4, .tiles2, .kv { grid-template-columns: 1fr 1fr; }
+  .source { display: grid; grid-template-columns: 40px 1fr; column-gap: 12px; row-gap: 0; padding: 12px; }
+  .source .sicon { grid-row: span 2; }
+  .stepper { display: none; }
+  .step-mobile { display: flex; flex-direction: column; gap: 6px; }
+  .msg { max-width: 92%; }
+  .h-title h2 { font-size: 18px; }
+  .logs .l { grid-template-columns: 1fr; gap: 2px; }
+  .mascot { width: 88px; height: 88px; }
+  .plan.rec { order: -1; }
+  .row.actions > .btn { flex: 1 1 auto; }
+  .vt thead { display: none; }
+  .vt tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .vt td:nth-child(2)::before { content: "قبل: "; color: var(--text-3); font-size: 12px; }
+  .vt td:nth-child(3)::before { content: "بعد: "; color: var(--text-3); font-size: 12px; }
+  .vt td:first-child { grid-column: 1 / -1; font-weight: 700; border: 0; padding-bottom: 0; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M14 4c3.5 0 6 2.5 6 6-1.8 3.8-5 6.5-8.5 8L9 15.5C10.5 12 13.2 8.8 17 7"/><path d="M9 15.5L6 16l-1 3 3-1 .5-3M14.5 9.5h.01"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="12" rx="5"/><path d="M12 8V5M9 5l1.5 2M15 5l-1.5 2M3 13h4M17 13h4M4 19l3-2M20 19l-3-2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-3 7.6-7 9-4-1.4-7-4.8-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h12M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6.2 0C6.6 2.8 5.6 3.1 5.6 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.2 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-ram" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11v2M11 11v2M15 11v2M7 17v2M12 17v2M17 17v2"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 5v4h-4"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l2.5 2.5M14.5 8.5L17 11"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.4v.1"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="mascot" viewBox="0 0 120 120">
+    <defs><linearGradient id="mg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dfe3fb"/></linearGradient></defs>
+    <circle cx="60" cy="64" r="50" fill="#eceffe"/>
+    <line x1="60" y1="18" x2="60" y2="28" stroke="#8b5cf6" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="60" cy="15" r="5" fill="#8b5cf6"/>
+    <rect x="22" y="28" width="76" height="62" rx="28" fill="url(#mg)" stroke="#cfd5e8" stroke-width="1.5"/>
+    <rect x="13" y="50" width="10" height="20" rx="5" fill="#3d4ee8"/>
+    <rect x="97" y="50" width="10" height="20" rx="5" fill="#3d4ee8"/>
+    <rect x="32" y="40" width="56" height="36" rx="18" fill="#1d2156"/>
+    <ellipse cx="48" cy="58" rx="6" ry="7" fill="#5ee6ff"/>
+    <ellipse cx="72" cy="58" rx="6" ry="7" fill="#5ee6ff"/>
+    <path d="M53 68q7 5 14 0" stroke="#5ee6ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <rect x="44" y="92" width="32" height="12" rx="6" fill="#dfe3fb"/>
+  </symbol>
+</svg>
+
+<div class="doc-bar">
+  <h1>وایرفریم‌های همیار — فاز ۲</h1>
+  <div class="seg" id="screens" role="group" aria-label="صفحه"></div>
+  <div class="seg" role="group" aria-label="اندازه">
+    <button type="button" data-vp="desktop" aria-pressed="true">دسکتاپ</button>
+    <button type="button" data-vp="mobile" aria-pressed="false">موبایل ۳۷۵</button>
+  </div>
+  <p class="note">داده‌ها نمونه‌اند و فقط برای نشان دادن چیدمان آمده‌اند. در محصول، هر عدد از API لیارا یا اندازه‌گیری خود همیار می‌آید و منبعش کنارش نوشته می‌شود.</p>
+</div>
+<p class="caption" id="caption"></p>
+<div class="stage"><div class="frame" id="frame"></div></div>
+
+<script>
+const ic = (n, c = '') => `<svg class="ico ${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const mascot = (cls = '') => `<svg class="mascot ${cls}" aria-hidden="true"><use href="#mascot"/></svg>`;
+
+const NAV = [
+  ['home', 'داشبورد', 'home'], ['rocket', 'دیپلوی جدید', 'deploy'], ['server', 'سرویس‌ها', 'apps'],
+  ['pulse', 'مانیتورینگ', 'monitor'], ['file', 'لاگ‌ها', 'logs'], ['bug', 'حوادث', 'incident'],
+  ['globe', 'دامنه و DNS', 'domain'], ['shield', 'تأییدها', 'approvals', 2], ['gear', 'تنظیمات', 'settings'],
+];
+const TABS = [['home', 'خانه', 'home'], ['rocket', 'دیپلوی', 'deploy'], ['server', 'سرویس‌ها', 'apps'], ['bug', 'حوادث', 'incident'], ['more', 'بیشتر', 'more']];
+
+function statusPanel() {
+  return `<aside class="panel" aria-label="وضعیت سرویس">
+    <h3>وضعیت سرویس</h3>
+    <div class="appsel">${mascot('sm')}<div style="flex:1"><b>shop-api</b><small>node · پلن small-g2</small></div>${ic('down')}</div>
+    <div class="row between"><span class="pill ok"><span class="dot"></span>سالم</span><span class="src">بررسی سلامت · ۲ دقیقه پیش</span></div>
+    <div class="tiles2">
+      <div class="metric"><div class="label">زمان پاسخ (p95)</div><div class="val">۱۸۰ <small>ms</small></div><div class="src">اندازه‌گیری همیار</div></div>
+      <div class="metric"><div class="label">پردازنده</div><div class="val">۲۸٪</div><div class="bar"><i style="width:28%"></i></div></div>
+      <div class="metric"><div class="label">حافظه</div><div class="val">۲۱۰ <small>/ ۵۱۲ MB</small></div><div class="bar violet"><i style="width:41%"></i></div></div>
+      <div class="metric"><div class="label">نسخه‌ی فعال</div><div class="val" style="font-size:15px">۱۲ ساعت پیش</div><div class="src">READY</div></div>
+    </div>
+    <div class="card" style="padding:12px">
+      <div class="row between"><b style="font-size:13px">تأییدهای در انتظار</b><span class="pill bad">۲</span></div>
+      <div class="muted">ری‌استارت shop-api · از Claude Code</div>
+    </div>
+    <label class="row between card" style="padding:12px"><span><b style="font-size:13px">پایش خودکار</b><br><span class="muted">هر ۳۰ ثانیه، تا وقتی این صفحه باز است</span></span><span class="pill gray">خاموش</span></label>
+    <a class="btn ghost" href="#" style="justify-content:flex-start">${ic('pulse')} مانیتورینگ کامل</a>
+  </aside>`;
+}
+
+function shell(active, inner, { panel = true, title = '' } = {}) {
+  const nav = NAV.map(([i, l, k, n]) => `<a href="#" class="${k === active ? 'on' : ''}">${ic(i)}<span class="label">${l}</span>${n ? `<span class="count">${n}</span>` : ''}</a>`).join('');
+  const tabs = TABS.map(([i, l, k]) => `<a href="#" class="${k === active ? 'on' : ''}">${ic(i)}${l}</a>`).join('');
+  return `<div class="app ${panel ? '' : 'no-panel'}">
+    <aside class="side"><div class="brand"><span class="logo">${ic('shield')}</span><span>همیار</span></div>
+      <nav class="nav" aria-label="منوی اصلی">${nav}</nav>
+      <div class="helper">${mascot('sm')}<div><b>همیار</b>دستیار DevOps شما روی لیارا</div></div>
+    </aside>
+    <div class="main">
+      <header class="top">
+        <div class="search">${ic('search')} جست‌وجوی برنامه</div>
+        <span class="pill ok app-pill"><span class="dot"></span>shop-api</span>
+        <span class="grow"></span>
+        <span class="iconbtn" aria-label="تأییدها">${ic('bell')}<span class="badge">۲</span></span>
+        <span class="account"><div><b>نام از حساب لیارا</b>موجودی ۴۸۰٬۰۰۰ تومان</div><span class="avatar">ح</span></span>
+      </header>
+      <main class="content ${title === 'center' ? 'center' : ''}">${inner}</main>
+      <nav class="tabbar" aria-label="منوی پایین">${tabs}</nav>
+    </div>
+    ${panel ? statusPanel() : ''}
+  </div>`;
+}
+
+const stepper = (cur, labels = ['منبع و بررسی', 'پلن', 'تنظیمات', 'دیپلوی']) => `
+  <div class="stepper">${labels.map((l, i) => `<div class="step ${i + 1 === cur ? 'on' : i + 1 < cur ? 'done' : ''}"><i>${i + 1 < cur ? ic('check') : (i + 1).toLocaleString('fa-IR')}</i>${l}</div>`).join('')}</div>
+  <div class="step-mobile"><div class="row between"><b>مرحله ${cur.toLocaleString('fa-IR')} از ۴ · ${labels[cur - 1]}</b><span class="muted">بعدی: ${labels[cur] ?? 'پایان'}</span></div><div class="bar"><i style="width:${cur * 25}%"></i></div></div>`;
+
+const approvalCard = `
+  <section class="approval" aria-label="درخواست تأیید">
+    <div class="ah"><b>${ic('shield')} اجازه می‌دهید؟ ساخت و دیپلوی shop-api</b><span class="row"><span class="pill warn">ریسک: متوسط (T2)</span><span class="pill gray">درخواست #۴۲ · ۹:۴۰ مانده</span></span></div>
+    <div class="ab">
+      <div class="kv">
+        <div><span>برنامه</span><b>shop-api (جدید)</b></div>
+        <div><span>هزینه</span><b>۴۷۵٬۰۰۰ تومان/ماه</b></div>
+        <div><span>قطعی</span><b>ندارد (برنامه‌ی جدید)</b></div>
+        <div><span>بازگشت</span><b>خاموش کردن از همیار</b></div>
+      </div>
+      <div class="diff">
+        <div class="add">${ic('check')} ساخت برنامه‌ی <code>shop-api</code> با پلن <code>small-g2</code> (node)</div>
+        <div class="add">${ic('check')} تنظیم ۲ متغیر محیطی: <code>DATABASE_URL</code>، <code>SESSION_SECRET</code> (مقدارها نمایش داده نمی‌شوند)</div>
+        <div class="chg">${ic('rocket')} آپلود ۴۸ فایل (۱٫۲ MB) و انتشار روی پورت ۳۰۰۰ با بررسی سلامت <code>/health</code></div>
+      </div>
+      <details><summary>جزئیات فنی</summary><pre class="mono">liara.json · healthCheck: CMD curl --fail http://localhost:3000/health || exit 1</pre></details>
+      <div class="row actions"><button class="btn primary">${ic('check')} تأیید و اجرا</button><button class="btn">${ic('edit')} ویرایش</button><button class="btn danger">${ic('x')} رد کردن</button></div>
+      <p class="muted" style="margin:0">با «رد کردن» دلیلش را می‌پرسیم تا همیار راه دیگری پیشنهاد کند. این کار فقط با تأیید شما اجرا می‌شود.</p>
+    </div>
+  </section>`;
+
+const chartSvg = (pts, color, area = true) => {
+  const d = pts.map((y, i) => `${(i / (pts.length - 1)) * 600},${150 - y}`).join(' L');
+  return `<svg viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="نمودار">
+    ${[30, 75, 120].map((y) => `<line x1="0" x2="600" y1="${y}" y2="${y}" stroke="#e4e7f2"/>`).join('')}
+    ${area ? `<path d="M${d} L600,150 L0,150Z" fill="${color}" opacity=".1"/>` : ''}
+    <path d="M${d}" fill="none" stroke="${color}" stroke-width="2"/>
+    <line x1="410" x2="410" y1="0" y2="150" stroke="#8b5cf6" stroke-dasharray="4 4"/>
+  </svg>`;
+};
+
+const SCREENS = {
+  home: {
+    label: 'داشبورد (شروع)',
+    caption: 'صفحه‌ی A — مرکز فرمان. چهار کار اصلی، کادر پیام، و پنل وضعیت سرویس. اگر هوش مصنوعی وصل نباشد، دکمه‌ها همچنان کار می‌کنند (بدون گفت‌وگو).',
+    html: () => shell('home', `
+      ${mascot()}
+      <h2 style="margin:0;font-size:24px">سلام! من همیار هستم</h2>
+      <p class="muted" style="margin:0">پروژه‌تان را روی لیارا بالا می‌آورم، سالم نگهش می‌دارم و وقتی مشکلی پیش بیاید علتش را با مدرک پیدا می‌کنم.</p>
+      <div class="chips">
+        <span class="chip">${ic('rocket')}دیپلوی پروژه</span><span class="chip">${ic('pulse')}وضعیت سرویس</span>
+        <span class="chip">${ic('bug')}تشخیص مشکل</span><span class="chip">${ic('server')}مدیریت دیپلوی</span>
+      </div>
+      <div class="composer"><div class="ph">درخواستتان را بنویسید… مثلاً «سایتم از صبح کند شده»</div>
+        <div class="row between"><span class="muted">${ic('shield')} هر تغییری فقط با تأیید شما</span><button class="send" aria-label="ارسال">${ic('send')}</button></div></div>
+      <div class="grid2" style="width:100%;max-width:720px;text-align:start">
+        <div class="card"><h4>برنامه‌های شما</h4><div class="row between"><span>shop-api</span><span class="pill ok">سالم</span></div><div class="row between"><span>blog</span><span class="pill gray">خاموش</span></div></div>
+        <div class="card"><h4>آخرین عملیات</h4><div class="row between"><span>دیپلوی shop-api</span><span class="pill ok">تأیید سلامت</span></div><div class="row between"><span>ری‌استارت blog</span><span class="pill bad">رد شد</span></div></div>
+      </div>`, { title: 'center' }),
+  },
+  chat: {
+    label: 'گفت‌وگو + کارت‌ها',
+    caption: 'گفت‌وگو کار را هماهنگ می‌کند؛ نتیجه‌ها کارت‌های ساختاریافته‌اند، نه پیام طولانی. اینجا: «سایتم ۵۰۰ می‌ده».',
+    html: () => shell('home', `
+      <div class="msg user">سایتم خطای ۵۰۰ می‌ده</div>
+      <div class="bot-row">${mascot('sm')}<div style="flex:1;display:flex;flex-direction:column;gap:12px">
+        <div class="msg bot">بررسی کردم. علت اصلی پیدا شد — مدرک‌ها پایین است.</div>
+        <div class="card"><div class="row between"><h4>${ic('bug')} حادثه: خطای ۵۰۰ در /products</h4><span class="pill bad">بحرانی · باز</span></div>
+          <div class="muted">شروع: ۱۰:۴۲ · ۳۸ خطا در ۱۵ دقیقه</div>
+          <div class="hyp confirmed" style="margin-top:10px"><div class="row between"><b>علت تأییدشده: متغیر DATABASE_URL تنظیم نشده</b><span class="pill ok">اطمینان ۹۵٪</span></div>
+            <div class="ev"><b>E1</b> لاگ: <code>DATABASE_URL is not defined</code> (۳۸ بار)</div>
+            <div class="ev"><b>E2</b> کد آن را در <code>server.js:39</code> می‌خواند</div></div>
+          <div class="row" style="margin-top:10px"><span class="pill gray">رد شد: نسخه‌ی بد (E3)</span><span class="pill gray">رد شد: کمبود حافظه (E4)</span><a class="btn ghost" href="#">صفحه‌ی کامل حادثه</a></div>
+        </div>
+        <div class="card"><h4>${ic('key')} مقدار DATABASE_URL را وارد کنید</h4><p class="muted" style="margin:0 0 8px">مقدار مستقیم به لیارا می‌رود؛ همیار و هوش مصنوعی آن را نمی‌بینند.</p>
+          <div class="input">••••••••••••</div><div class="row" style="margin-top:10px"><button class="btn primary">ادامه به تأیید</button><button class="btn">بعداً</button></div></div>
+      </div></div>
+      <div class="composer" style="max-width:none;margin-top:auto"><div class="ph">ادامه‌ی گفت‌وگو…</div><div class="row between"><span></span><button class="send">${ic('send')}</button></div></div>`),
+  },
+  source: {
+    label: 'دیپلوی ۱: منبع',
+    caption: 'صفحه‌ی B — با «دیپلوی پروژه جدید» اول سه راه را می‌بینید. GitHub را خود همیار دانلود می‌کند و از راه رسمی آپلود لیارا می‌فرستد (لیارا API دیپلوی مستقیم از GitHub ندارد). «پروژه‌ی محلی» فقط وقتی داشبورد روی همین کامپیوتر است دیده می‌شود.',
+    html: () => shell('deploy', `
+      ${stepper(1)}
+      <div class="h-title"><h2>کدتان کجاست؟</h2><p class="muted" style="margin:4px 0 0">یکی را انتخاب کنید؛ بقیه را همیار پیدا می‌کند.</p></div>
+      <div class="sources">
+        <div class="source"><span class="sicon">${ic('upload')}</span><b>آپلود فایل ZIP</b><span class="muted">پوشه‌ی پروژه را زیپ کنید و بکشید اینجا (حداکثر ۵۰ مگابایت)</span></div>
+        <div class="source on"><span class="sicon">${ic('github')}</span><b>GitHub</b><span class="muted">آدرس ریپازیتوری عمومی</span></div>
+        <div class="source"><span class="sicon">${ic('folder')}</span><b>پروژه‌ی محلی</b><span class="muted">مسیر پوشه روی همین کامپیوتر</span></div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="field"><label>آدرس ریپازیتوری GitHub</label><div class="input ok">github.com/you/shop-api ${ic('check')}</div></div>
+        <div class="grid2"><div class="field"><label>شاخه (Branch)</label><div class="input">main ${ic('down')}</div></div>
+          <div class="field"><label>زیرپوشه (اختیاری)</label><div class="input">apps/web</div></div></div>
+        <p class="muted" style="margin:0">ریپازیتوری‌های خصوصی در این نسخه پشتیبانی نمی‌شوند.</p>
+      </div>
+      <div class="row" style="justify-content:flex-end"><button class="btn primary">بررسی پروژه ${ic('send')}</button></div>`, { panel: false }),
+  },
+  plan: {
+    label: 'دیپلوی ۲: بررسی و پلن',
+    caption: 'نتیجه‌ی بررسی + سه پلن واقعی از کاتالوگ زنده‌ی لیارا (ارزان‌ترین مناسب، پیشنهادی، یکی بزرگ‌تر) با قیمت ماهانه و دلیل انتخاب.',
+    html: () => shell('deploy', `
+      ${stepper(2)}
+      <div class="h-title"><h2>تحلیل پروژه کامل شد</h2></div>
+      <div class="card"><div class="row between"><b>shop-api</b><a class="btn ghost" href="#">تغییر منبع</a></div>
+        <div class="row"><span class="pill info">Node.js ۲۰</span><span class="pill info">Express</span><span class="pill info">پورت ۳۰۰۰</span><span class="pill info">npm start</span><span class="pill ok">مسیر سلامت /health</span></div>
+        <div class="row" style="margin-top:8px"><span class="pill warn">${ic('alert')} ۲ متغیر محیطی لازم است</span><span class="muted">در مرحله‌ی بعد می‌پرسیم</span></div>
+        <details style="margin-top:6px"><summary>جزئیات فنی (liara.json پیشنهادی)</summary></details></div>
+      <h3 style="margin:4px 0 0;text-align:center">پلن پیشنهادی همیار</h3>
+      <div class="plans">
+        <div class="plan"><b>small-g1</b><span class="muted">ارزان‌ترین که اجرا می‌شود</span><ul><li>${ic('cpu')} ۰٫۲۵ هسته</li><li>${ic('ram')} ۲۵۶ MB حافظه</li><li>${ic('disk')} ۱ GB دیسک</li></ul><div class="row between"><span class="price">۲۴۰٬۰۰۰ <small>تومان/ماه</small></span><button class="btn">انتخاب</button></div><span class="muted">${ic('alert')} حافظه برای Express + Prisma تنگ است</span></div>
+        <div class="plan rec"><div class="row between"><b>small-g2</b><span class="pill violet">پیشنهاد همیار</span></div><span class="muted">مناسب این پروژه</span><ul><li>${ic('cpu')} ۰٫۵ هسته</li><li>${ic('ram')} ۵۱۲ MB حافظه</li><li>${ic('disk')} ۲ GB دیسک</li></ul><div class="row between"><span class="price">۴۷۵٬۰۰۰ <small>تومان/ماه</small></span><button class="btn primary">انتخاب شد</button></div><span class="muted">چرا؟ وابستگی‌ها حدود ۳۰۰ MB حافظه لازم دارند؛ موجودی برای ۳۰ روز کافی است.</span></div>
+        <div class="plan"><b>medium-g2</b><span class="muted">برای ترافیک بیشتر</span><ul><li>${ic('cpu')} ۱ هسته</li><li>${ic('ram')} ۱ GB حافظه</li><li>${ic('disk')} ۵ GB دیسک</li></ul><div class="row between"><span class="price">۹۵۰٬۰۰۰ <small>تومان/ماه</small></span><button class="btn">انتخاب</button></div></div>
+      </div>
+      <p class="src" style="text-align:center;margin:0">قیمت‌ها: کاتالوگ زنده‌ی لیارا (GET /v1/me) · موجودی: GET /v1/billing</p>
+      <div class="row between"><button class="btn">قبلی</button><button class="btn primary">ادامه</button></div>`, { panel: false }),
+  },
+  settings: {
+    label: 'دیپلوی ۳: تنظیمات',
+    caption: 'فقط چیزهای لازم: نام برنامه و مقدار متغیرهای محیطی که کد می‌خواند. مقادیر در فیلد رمز وارد می‌شوند و فقط به لیارا می‌روند. بقیه پشت «تنظیمات پیشرفته».',
+    html: () => shell('deploy', `
+      ${stepper(3)}
+      <div class="h-title"><h2>تنظیمات دیپلوی</h2><p class="muted" style="margin:4px 0 0">این‌ها را کد شما لازم دارد.</p></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><label>نام برنامه روی لیارا</label><div class="input ok">shop-api ${ic('check')}</div><span class="muted">آدرس: shop-api.liara.run · این نام آزاد است</span></div>
+        <div class="field"><label>DATABASE_URL <span class="muted">— در server.js:39 خوانده می‌شود</span></label><div class="input">••••••••••••••••</div></div>
+        <div class="field"><label>SESSION_SECRET <span class="muted">— در auth.js:12</span></label><div class="input">••••••••</div></div>
+        <div class="row"><button class="btn">${ic('file')} خواندن از فایل .env پروژه</button><span class="muted">فقط کلیدها نمایش داده می‌شوند</span></div>
+        <details><summary>تنظیمات پیشرفته (بررسی سلامت، liara.json)</summary></details>
+      </div>
+      <div class="row between"><button class="btn">قبلی</button><button class="btn primary">بازبینی و تأیید</button></div>`, { panel: false }),
+  },
+  approve: {
+    label: 'دیپلوی ۴: تأیید',
+    caption: 'صفحه‌ی E — کارت تأیید (همین کارت در گفت‌وگو، صفحه‌ی حادثه و صندوق تأییدها هم استفاده می‌شود). به درخواست ذخیره‌شده‌ی فاز ۱ وصل است؛ «ویرایش» به مرحله‌ی تنظیمات برمی‌گردد.',
+    html: () => shell('deploy', `${stepper(4)}<div class="h-title"><h2>آماده‌ی دیپلوی</h2></div>${approvalCard}`, { panel: false }),
+  },
+  progress: {
+    label: 'دیپلوی: پیشرفت',
+    caption: 'مراحل واقعی عملیات (PREPARING → UPLOADING → BUILDING → DEPLOYING → VERIFYING) با زمان هرکدام. با رفرش صفحه از دست نمی‌رود.',
+    html: () => shell('deploy', `
+      ${stepper(4)}
+      <div class="h-title"><h2>در حال دیپلوی shop-api…</h2><p class="muted" style="margin:4px 0 0">می‌توانید صفحه را ببندید؛ همیار کار را دنبال می‌کند.</p></div>
+      <div class="card"><ol class="tl">
+        <li><span class="st done">${ic('check')}</span><span>دریافت کد از GitHub<small>توسط همیار · ۴۸ فایل</small></span><span class="t">۰۰:۰۴</span></li>
+        <li><span class="st done">${ic('check')}</span><span>ساخت برنامه و تنظیم متغیرها<small>small-g2 · ۲ متغیر</small></span><span class="t">۰۰:۰۲</span></li>
+        <li><span class="st done">${ic('check')}</span><span>آپلود به لیارا<small>۱٫۲ MB</small></span><span class="t">۰۰:۰۶</span></li>
+        <li><span class="st run">${ic('refresh')}</span><span>ساخت (Build)<small class="mono">npm ci … added 214 packages</small></span><span class="t">۰۱:۱۲</span></li>
+        <li><span class="st"></span><span>استقرار<small>منتظر</small></span><span class="t"></span></li>
+        <li><span class="st"></span><span>بررسی سلامت<small>۳ دور روی /health</small></span><span class="t"></span></li>
+      </ol>
+      <div class="row between" style="margin-top:8px"><a class="btn ghost" href="#">${ic('file')} لاگ ساخت</a><button class="btn danger">توقف</button></div></div>`, { panel: false }),
+  },
+  result: {
+    label: 'دیپلوی: نتیجه',
+    caption: 'فقط بعد از VERIFIED_HEALTHY (سه دور بررسی موفق و نسخه‌ی جدید فعال). اگر سلامت رد شود، به‌جای این صفحه علت اندازه‌گیری‌شده و دکمه‌ی «بررسی کن» نمایش داده می‌شود.',
+    html: () => shell('deploy', `
+      ${mascot()}
+      <h2 style="margin:0">سایت شما آنلاین و سالم است</h2>
+      <p class="muted" style="margin:0">۳ دور بررسی موفق · p95 = ۱۸۰ ms · نسخه‌ی جدید فعال است</p>
+      <div class="input ok" style="max-width:420px;width:100%">${ic('copy')} https://shop-api.liara.run</div>
+      <div class="grid3" style="width:100%;max-width:720px;text-align:start">
+        <div class="card">${ic('globe')}<h4>اتصال دامنه</h4><span class="muted">دامنه‌ی خودتان را وصل کنید</span></div>
+        <div class="card">${ic('pulse')}<h4>روشن کردن پایش</h4><span class="muted">هر ۳۰ ثانیه سلامت را چک کن</span></div>
+        <div class="card">${ic('file')}<h4>مشاهده‌ی لاگ‌ها</h4><span class="muted">خروجی زنده‌ی برنامه</span></div>
+      </div>
+      <div class="row"><button class="btn primary">رفتن به داشبورد برنامه</button><button class="btn">دیپلوی پروژه‌ی دیگر</button></div>`, { title: 'center' }),
+  },
+  monitor: {
+    label: 'مانیتورینگ',
+    caption: 'صفحه‌ی C — فقط داده‌ی واقعی. «درخواست‌ها» در لیارا API وجود ندارد، پس به‌جای نمودار جعلی، کارت «در دسترس نیست» با دلیل. خط بنفش = زمان انتشار نسخه.',
+    html: () => shell('monitor', `
+      <div class="row between"><div class="row">${mascot('sm')}<b style="font-size:18px">shop-api</b><span class="pill ok"><span class="dot"></span>در حال اجرا</span></div>
+        <div class="row"><button class="btn">${ic('refresh')} ری‌استارت</button><button class="btn">${ic('undo')} بازگشت نسخه</button></div></div>
+      <div class="tabs"><a href="#">نمای کلی</a><a href="#" class="on">مانیتورینگ</a><a href="#">لاگ‌ها</a><a href="#">نسخه‌ها</a><a href="#">تنظیمات</a></div>
+      <div class="row"><span class="pill info">۱ ساعت</span><span class="pill gray">۲۴ ساعت</span><span class="pill gray">۷ روز</span></div>
+      <div class="grid4">
+        <div class="metric"><div class="label">سلامت</div><div class="val" style="color:var(--success)">سالم</div><div class="src">۳/۳ بررسی موفق · همیار</div></div>
+        <div class="metric"><div class="label">زمان پاسخ p95</div><div class="val">۱۸۰ <small>ms</small></div><div class="src">اندازه‌گیری همیار</div></div>
+        <div class="metric"><div class="label">پردازنده</div><div class="val">۲۸٪</div><div class="bar"><i style="width:28%"></i></div><div class="src">از سقف پلن · لیارا</div></div>
+        <div class="metric"><div class="label">حافظه</div><div class="val">۲۱۰ <small>/ ۵۱۲ MB</small></div><div class="bar violet"><i style="width:41%"></i></div><div class="src">لیارا</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="row between"><h4>پردازنده و حافظه</h4><span class="legend"><span>━ پردازنده</span><span style="color:var(--violet)">━ حافظه</span></span></div><div class="chart">${chartSvg([30, 35, 32, 40, 38, 45, 60, 55, 52, 48, 44, 50], '#3d4ee8')}</div></div>
+        <div class="card"><div class="row between"><h4>ترافیک شبکه</h4><span class="src">KB/s · ورودی و خروجی · لیارا</span></div><div class="chart">${chartSvg([20, 22, 30, 28, 50, 70, 65, 80, 60, 55, 62, 58], '#8b5cf6')}</div></div>
+      </div>
+      <div class="grid2">
+        <div class="unavail">${ic('alert')} <b>تعداد درخواست‌ها و کدهای وضعیت</b><br>لیارا این آمار را از API نمی‌دهد. همیار عدد ساختگی نشان نمی‌دهد؛ برای خطاها به «لاگ‌ها» بروید.</div>
+        <div class="card"><h4>دیسک</h4><div class="bar"><i style="width:12%"></i></div><span class="src">۲۴۰ MB از ۲ GB · لیارا</span></div>
+      </div>`),
+  },
+  logs: {
+    label: 'لاگ‌ها + تحلیل',
+    caption: 'لاگ با فیلتر سطح و جست‌وجو. وقتی خطا هست، کارت «تحلیل همیار» زیرش می‌آید و به صفحه‌ی حادثه می‌برد.',
+    html: () => shell('logs', `
+      <div class="tabs"><a href="#">نمای کلی</a><a href="#">مانیتورینگ</a><a href="#" class="on">لاگ‌ها</a><a href="#">نسخه‌ها</a><a href="#">تنظیمات</a></div>
+      <div class="row" style="align-items:stretch"><div class="input rtl" style="flex:1 1 220px">${ic('search')} جست‌وجو در لاگ‌ها</div><div class="input rtl" style="flex:0 0 auto">همه‌ی سطح‌ها ${ic('down')}</div><button class="btn">${ic('refresh')} تازه‌سازی</button></div>
+      <div class="card logs">
+        <div class="l"><span>12:32:15</span><span class="lvl e">ERROR</span><span>Error: DATABASE_URL is not defined<br><span class="muted">at server.js:39</span></span></div>
+        <div class="l"><span>12:32:14</span><span class="lvl w">WARN</span><span>Database connection pool warning</span></div>
+        <div class="l"><span>12:32:10</span><span class="lvl i">INFO</span><span>GET /api/users 200 120ms</span></div>
+        <div class="l"><span>12:32:08</span><span class="lvl e">ERROR</span><span>GET /products 500 4ms</span></div>
+      </div>
+      <div class="card" style="border-color:#d9ccfb;background:var(--violet-soft)"><div class="row between"><b>${mascot('sm')} تحلیل همیار</b><span class="pill bad">۳۸ خطا در ۱۵ دقیقه</span></div>
+        <p style="margin:6px 0">به نظر می‌رسد متغیر <code>DATABASE_URL</code> تنظیم نشده و همه‌ی درخواست‌های /products با ۵۰۰ برمی‌گردند.</p>
+        <div class="row" style="justify-content:flex-end"><button class="btn primary">بررسی کامل و پیشنهاد رفع</button></div></div>`),
+  },
+  incident: {
+    label: 'حادثه (SRE)',
+    caption: 'صفحه‌ی D — مدرک‌ها E1…، فرضیه‌ها با چهار حالت (تأییدشده، محتمل، نامشخص، رد شده با دلیل)، راه‌حل‌ها، تأیید، و جدول قبل/بعد.',
+    html: () => shell('incident', `
+      <div class="row between"><div><b style="font-size:18px">خطای ۵۰۰ در /products — shop-api</b><div class="muted">شروع ۱۰:۴۲ · محرک: پایش خودکار</div></div><span class="pill ok">حل شد · تأیید با اندازه‌گیری</span></div>
+      <div class="grid2">
+        <div class="card"><h4>فرضیه‌ها</h4>
+          <div class="hyp confirmed"><div class="row between"><b>تأییدشده: DATABASE_URL تنظیم نشده</b><span class="pill ok">۹۵٪</span></div><div class="ev"><b>E1</b> ۳۸ بار «DATABASE_URL is not defined»</div><div class="ev"><b>E2</b> server.js:39 آن را می‌خواند؛ در لیارا تنظیم نشده</div></div>
+          <div class="hyp" style="margin-top:8px"><div class="row between"><b>نامشخص: کندی پایگاه داده</b><span class="pill gray">مدرک کافی نیست</span></div></div>
+          <div class="hyp rejected" style="margin-top:8px"><b>رد شد: نسخه‌ی بد</b><div class="ev"><b>E3</b> خطاها ۲ ساعت بعد از انتشار شروع شد، نه بلافاصله</div></div>
+          <div class="hyp rejected" style="margin-top:8px"><b>رد شد: کمبود حافظه</b><div class="ev"><b>E4</b> حافظه ۴۱٪ سقف، رویداد OOM نیست</div></div>
+        </div>
+        <div class="card"><h4>خط زمانی</h4><ol class="tl">
+          <li><span class="st done">${ic('check')}</span><span>جمع‌آوری مدرک<small>لاگ، رویدادها، CPU/RAM، نسخه‌ها، بررسی زنده</small></span><span class="t">۱۰:۴۳</span></li>
+          <li><span class="st done">${ic('check')}</span><span>تشخیص<small>علت: متغیر تنظیم‌نشده</small></span><span class="t">۱۰:۴۳</span></li>
+          <li><span class="st fail">${ic('x')}</span><span>پیشنهاد ری‌استارت — رد شد<small>دلیل: «ری‌استارت مشکل را حل نمی‌کند»</small></span><span class="t">۱۰:۴۴</span></li>
+          <li><span class="st done">${ic('check')}</span><span>تنظیم DATABASE_URL — تأیید شد<small>کاربر (داشبورد)</small></span><span class="t">۱۰:۴۵</span></li>
+          <li><span class="st done">${ic('check')}</span><span>بررسی بعد از رفع<small>۳/۳ موفق</small></span><span class="t">۱۰:۴۶</span></li>
+        </ol></div>
+      </div>
+      <div class="card"><h4>قبل و بعد</h4><table class="vt"><thead><tr><th>شاخص</th><th>قبل</th><th>بعد</th></tr></thead><tbody>
+        <tr><td>بررسی سلامت</td><td><span class="pill bad">۰ از ۳</span></td><td><span class="pill ok">۳ از ۳</span></td></tr>
+        <tr><td>زمان پاسخ p95</td><td>—</td><td>۱۸۰ ms</td></tr>
+        <tr><td>خطا در ۵ دقیقه</td><td>۱۲</td><td>۰</td></tr></tbody></table></div>
+      <div class="row"><button class="btn primary">${ic('file')} گزارش حادثه (فارسی)</button><button class="btn">${ic('copy')} کپی</button></div>`, { panel: false }),
+  },
+  domain: {
+    label: 'دامنه',
+    caption: 'صفحه‌ی F — مقادیر DNS با دکمه‌ی کپی، مرحله‌هایی که باید خودتان در ثبت‌کننده انجام دهید مشخص است، و «بررسی اتصال» واقعاً DNS عمومی را چک می‌کند.',
+    html: () => shell('domain', `
+      <div class="grid2">
+        <div class="card" style="display:flex;flex-direction:column;gap:10px"><h4>اتصال دامنه</h4>
+          <div class="field"><label>دامنه</label><div class="input">shop.example.ir</div></div>
+          <div class="source on"><b>دامنه‌ام در ایرنیک است</b><span class="muted">نیم‌سرورها را به DNS لیارا می‌دهیم؛ رکوردها را همیار می‌سازد</span></div>
+          <div class="source"><b>دامنه در سرویس دیگری است</b><span class="muted">رکورد CNAME را خودتان اضافه می‌کنید</span></div>
+          <div class="source"><b>فعلاً دامنه نمی‌خواهم</b><span class="muted">از shop-api.liara.run استفاده کنید</span></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;gap:10px"><h4>راهنمای تنظیم</h4>
+          <ol class="tl">
+            <li><span class="st done">${ic('check')}</span><span>اضافه شدن دامنه در لیارا</span><span></span></li>
+            <li><span class="st run">2</span><span>در پنل ایرنیک نیم‌سرورها را عوض کنید<small><span class="pill warn">این مرحله را خودتان انجام دهید</span></small></span><span></span></li>
+            <li><span class="st">3</span><span>بررسی اتصال و فعال‌سازی SSL</span><span></span></li>
+          </ol>
+          <div class="field"><label>نیم‌سرور ۱</label><div class="input">${ic('copy')} ns1.liara.ir</div></div>
+          <div class="field"><label>نیم‌سرور ۲</label><div class="input">${ic('copy')} ns2.liara.ir</div></div>
+          <p class="muted" style="margin:0">تغییر نیم‌سرور ممکن است تا چند ساعت طول بکشد.</p>
+          <button class="btn primary">${ic('refresh')} بررسی اتصال</button>
+        </div>
+      </div>`, { panel: false }),
+  },
+};
+
+const frame = document.getElementById('frame');
+const caption = document.getElementById('caption');
+const seg = document.getElementById('screens');
+let current = 'home';
+seg.innerHTML = Object.entries(SCREENS).map(([k, s]) => `<button type="button" data-k="${k}" aria-pressed="${k === current}">${s.label}</button>`).join('');
+function show(k) {
+  current = k;
+  frame.innerHTML = SCREENS[k].html();
+  caption.textContent = SCREENS[k].caption;
+  seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+}
+seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) show(b.dataset.k); });
+document.querySelectorAll('[data-vp]').forEach((b) => b.addEventListener('click', () => {
+  frame.classList.toggle('mobile', b.dataset.vp === 'mobile');
+  document.querySelectorAll('[data-vp]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+}));
+show(location.hash.slice(1) in SCREENS ? location.hash.slice(1) : 'home');
+</script>
+</body>
+</html>
