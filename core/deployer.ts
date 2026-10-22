@@ -149,6 +149,8 @@ export interface Verification {
   p95: number;
   // the release Liara serves after the deploy; if it is not ours, the old one is still live
   currentRelease?: string;
+  // how long the app took to answer for the first time after the release went live
+  warmupMs?: number;
   reason?: string;
 }
 
@@ -165,9 +167,12 @@ export interface VerifyDeps {
   sleep: (ms: number) => Promise<void>;
   rounds?: number;
   intervalMs?: number;
+  // a release can be marked ready before the app listens (cold start, no zero-downtime deploys)
+  warmupMs?: number;
+  warmupIntervalMs?: number;
 }
 
-const defaultDeps: VerifyDeps = { probe: (u, c) => probe(u, c), sleep, rounds: 3, intervalMs: 10_000 };
+const defaultDeps: VerifyDeps = { probe: (u, c) => probe(u, c), sleep, rounds: 3, intervalMs: 10_000, warmupMs: 90_000, warmupIntervalMs: 5_000 };
 
 // Several probe rounds a few seconds apart, plus a check that Liara now serves this release.
 export async function verifyDeployment(
@@ -179,6 +184,20 @@ export async function verifyDeployment(
 ): Promise<{ healthy: boolean; verification: Verification }> {
   const url = appUrl(app) + path;
   const rounds = deps.rounds ?? 3;
+  // wait for the first answer before measuring; a cold start must not count as unhealthy
+  const warmupMs = deps.warmupMs ?? 0;
+  const step = deps.warmupIntervalMs ?? 5_000;
+  let waited = 0;
+  while (warmupMs > 0) {
+    if ((await deps.probe(url, 1)).okRatio > 0) break;
+    if (waited >= warmupMs) {
+      const verification: Verification = { url, rounds: 0, okRatio: 0, p95: 0, warmupMs: waited };
+      verification.reason = `برنامه تا ${Math.round(waited / 1000).toLocaleString('fa-IR')} ثانیه بعد از انتشار به ${path} پاسخ نداد.`;
+      return { healthy: false, verification };
+    }
+    await deps.sleep(step);
+    waited += step;
+  }
   const samples: ProbeSample[] = [];
   for (let i = 0; i < rounds; i++) {
     if (i) await deps.sleep(deps.intervalMs ?? 10_000);
@@ -186,7 +205,7 @@ export async function verifyDeployment(
   }
   const summary = summarizeProbe(samples);
   const currentRelease = (await client.releases(app, 1).catch(() => undefined))?.currentRelease as string | undefined;
-  const verification: Verification = { url, rounds, okRatio: summary.okRatio, p95: summary.p95, currentRelease };
+  const verification: Verification = { url, rounds, okRatio: summary.okRatio, p95: summary.p95, currentRelease, ...(warmupMs ? { warmupMs: waited } : {}) };
   if (currentRelease && currentRelease !== releaseID) {
     verification.reason = `لیارا هنوز نسخه‌ی قبلی (${currentRelease}) را سرو می‌کند؛ نسخه‌ی جدید جایگزین نشده است.`;
     return { healthy: false, verification };

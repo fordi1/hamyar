@@ -661,6 +661,26 @@ input::placeholder { color: var(--text-3); }
   .inc-row .inc-tags { width: 100%; }
 }
 
+/* ---------- plan choice ---------- */
+.bundles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.bundle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; text-align: start; cursor: pointer; border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--surface); min-height: var(--control-h); }
+.bundle[aria-checked="true"] { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.bundle b { direction: ltr; }
+.bundle .price { font-size: 15px; font-weight: 800; }
+.bundle small { color: var(--text-3); font-size: 12px; }
+.plan-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.plan-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(140px, auto) minmax(0, 1.4fr); align-items: center; gap: 10px; padding: 10px 12px; min-height: var(--control-h); text-align: start; cursor: pointer; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.plan-row[aria-checked="true"] { border-color: var(--primary); background: var(--primary-soft); }
+.plan-row b { direction: ltr; text-align: start; }
+.plan-row .price { font-weight: 700; }
+.plan-row .price small { color: var(--text-3); font-weight: 500; }
+.plan-row .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.choice { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 14px; }
+@media (max-width: 767px) {
+  .plan-row { grid-template-columns: 1fr 1fr; }
+  .plan-row .tags { grid-column: 1 / -1; }
+}
+
 /* ---------- domains ---------- */
 .copy-row { display: flex; align-items: stretch; gap: 8px; }
 .copy-value { flex: 1; min-width: 0; display: flex; align-items: center; min-height: var(--control-h); padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-2); overflow-x: auto; white-space: nowrap; font-size: 13px; }

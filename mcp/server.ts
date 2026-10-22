@@ -36,7 +36,7 @@ const server = new McpServer(
     instructions: [
       'Hamyar deploys and operates apps on the Liara PaaS and investigates incidents like an SRE.',
       'Reply to the user in Persian. Keep tool output (previews, boards) intact when you show it.',
-      'Flow for a new project: analyze_project → show the plan → launch_app. For an existing app: deploy.',
+      'Flow for a new project: analyze_project → show the plan (list_plans if the user wants to choose, or if Liara refused a plan) → launch_app with planID and, for g2 plans, bundlePlanID. For an existing app: deploy.',
       'Flow for an incident ("site is slow", "500 error"): diagnose → explain the root cause citing evidence ids (E1…) → propose the first fix → after the fix, verify → incident_report.',
       'Change tools (deploy, set_env, restart_app, resize_plan, rollback, …) need human approval through a trusted channel. If a tool returns an approval request number, show the preview and tell the user to approve it in the Hamyar dashboard or by running `npm run approve -- <number>` in their own terminal. Only after the user says they approved, call the SAME tool with the SAME arguments plus approvalId. You cannot approve on the user\'s behalf; an unapproved approvalId is refused.',
       'Never ask the user to paste secret values into chat. For env values use set_env with envFile + keys so values are read from a local file.',
@@ -126,6 +126,12 @@ server.registerTool('liara_overview', {
   annotations: readOnly,
 }, () => safely(() => ops.overview(ctx)));
 
+server.registerTool('list_plans', {
+  title: 'Plans this account can buy',
+  description: 'Every app plan the Liara account can buy, the feature plans (bundlePlanID) each g2 plan needs, and the full monthly price (plan + feature plan). Use before launch_app when the user wants to choose, or after Liara refused a plan.',
+  annotations: readOnly,
+}, () => safely(() => ops.plansText(ctx)));
+
 server.registerTool('analyze_project', {
   title: 'Analyze a local project for deployment',
   description: 'Detects platform/port (same rules as the Liara CLI), env vars the code needs, recommends a plan with price and reason, checks the balance, and proposes liara.json. Call before launch_app.',
@@ -207,7 +213,8 @@ const changeTool = (name: string, title: string, description: string, shape: Rec
   }) as any);
 
 changeTool('launch_app', 'Create app and first deploy', 'Creates a Liara app on the given plan, sets the env vars the code needs (read from a local file so values never pass through chat), then deploys and verifies.', {
-  app, dir: z.string().describe('Absolute path of the project folder'), planID: z.string().describe('Plan id from analyze_project'),
+  app, dir: z.string().describe('Absolute path of the project folder'), planID: z.string().describe('Plan id from analyze_project or list_plans'),
+  bundlePlanID: z.string().optional().describe('Feature plan for a g2 plan (see list_plans); default: the cheapest with rollback'),
   envFile: z.string().optional().describe('Local .env file to read the values from'),
   keys: z.array(z.string()).optional().describe('Env var names to read from envFile and set before the deploy'),
 });

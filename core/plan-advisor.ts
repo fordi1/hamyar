@@ -44,6 +44,82 @@ export function toPlanList(raw: Record<string, any>): Plan[] {
     .sort((a, b) => a.monthly - b.monthly || b.ramGB - a.ramGB);
 }
 
+// The plans the Liara CLI offers for new apps (`app:create` keeps g2 plans in Iran).
+// Older plans may still be listed as available but are not offered here.
+export function deployablePlans(raw: Record<string, any>): Plan[] {
+  return toPlanList(raw).filter((p) => p.id.includes('g2'));
+}
+
+// ---------- feature bundle plans ----------
+// A g2 app also needs a "feature plan" (`bundlePlanID`) from `GET /v1/me` →
+// plans.projectBundlePlans[planID]. It is billed on top of the plan and decides features
+// such as rollback, zero-downtime deploys and log retention.
+
+export interface FeatureBundle {
+  id: string;
+  hourly: number;
+  monthly: number;
+  rollback: boolean;
+  zeroDowntime: boolean;
+  logsDays: number;
+}
+
+export function toBundleList(raw: Record<string, any>, planID: string): FeatureBundle[] {
+  return Object.entries<any>(raw?.[planID] ?? {})
+    .filter(([, b]) => b?.available)
+    .map(([id, b]) => ({
+      id,
+      hourly: Number(b.price) || 0,
+      monthly: b.displayPrice ?? Math.round(((Number(b.price) || 0) * HOURS_PER_MONTH) / 1000) * 1000,
+      rollback: Boolean(b.rollback),
+      zeroDowntime: Boolean(b.zeroDowntime),
+      logsDays: Number(b.maxLogsRetention) || 0,
+    }))
+    .sort((a, b) => a.hourly - b.hourly);
+}
+
+// Rollback is part of how Hamyar recovers from a bad release, so prefer the cheapest bundle with it.
+export function defaultBundle(bundles: FeatureBundle[]): FeatureBundle | undefined {
+  return bundles.find((b) => b.rollback) ?? bundles[0];
+}
+
+// ---------- full catalogue for the user to choose from ----------
+
+export interface CatalogEntry extends Plan {
+  // g2 plans choose among priced feature plans; older ("classic") plans get the free g1 "default"
+  generation: 'g2' | 'classic';
+  bundles: FeatureBundle[];
+  defaultBundle?: string;
+  totalHourly: number;
+  totalMonthly: number;
+  // enough memory for the project
+  fits: boolean;
+}
+
+// `blocked`: plan ids, or "g2" for the whole family, that Liara refused to create for this account.
+export function planCatalog(rawPlans: Record<string, any>, rawBundles: Record<string, any>, neededRamGB: number, opts: { blocked?: string[] } = {}): CatalogEntry[] {
+  const blocked = new Set(opts.blocked ?? []);
+  // only g2 plans: Liara's create endpoint takes bundlePlanID free/basic/standard/pro (an older
+  // plan's "default" bundle is refused) and the CLI offers only g2 plans for new apps
+  return deployablePlans(rawPlans)
+    .filter((p) => !blocked.has(p.id) && !blocked.has('g2'))
+    .map((p) => {
+      const generation: CatalogEntry['generation'] = p.id.includes('g2') ? 'g2' : 'classic';
+      const bundles = toBundleList(rawBundles, p.id);
+      const chosen = defaultBundle(bundles);
+      return {
+        ...p,
+        generation,
+        bundles,
+        defaultBundle: chosen?.id,
+        totalHourly: p.hourly + (chosen?.hourly ?? 0),
+        totalMonthly: p.monthly + (chosen?.monthly ?? 0),
+        fits: p.ramGB >= neededRamGB,
+      };
+    })
+    .sort((a, b) => a.totalMonthly - b.totalMonthly || b.ramGB - a.ramGB);
+}
+
 const BASE_RAM: Record<Platform, number> = {
   static: 0.25, react: 0.25, vue: 0.25, angular: 0.25,
   node: 0.5, php: 0.5, python: 0.5, flask: 0.5, go: 0.5, docker: 0.5,

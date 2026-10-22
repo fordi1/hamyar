@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { detectProject, type Detection } from './detect.js';
 import { scanEnv, type EnvScan } from './env-scan.js';
-import { recommendPlan, toPlanList, type PlanAdvice } from './plan-advisor.js';
+import { deployablePlans, recommendPlan, type PlanAdvice } from './plan-advisor.js';
 import { listFiles } from './pack.js';
 import type { LiaraClient } from './liara-client.js';
 
@@ -98,7 +98,7 @@ export function renderLaunchPlan(plan: LaunchPlan): string {
 export async function analyzeProject(client: LiaraClient, dir: string, app: string): Promise<LaunchPlan> {
   const detection = detectProject(dir);
   const [rawPlans, balance] = await Promise.all([client.appPlans(), client.balance()]);
-  const advice = recommendPlan({ platform: detection.platform, dependencies: dependencies(dir) }, toPlanList(rawPlans));
+  const advice = recommendPlan({ platform: detection.platform, dependencies: dependencies(dir) }, deployablePlans(rawPlans));
   const files = listFiles(dir, detection.platform);
   return {
     dir,

@@ -5,6 +5,7 @@ import type { LiaraClient } from './liara-client.js';
 import type { Policy } from './policy.js';
 import type { Preview } from './actions.js';
 import { analyzeProject, renderLaunchPlan } from './analyze.js';
+import { planCatalog } from './plan-advisor.js';
 import { diagnose, renderBoard } from './sre/diagnose.js';
 import { clusterLogs } from './sre/cluster.js';
 import { normalizeLogs } from './sre/collect.js';
@@ -48,6 +49,26 @@ export async function overview({ client, policy }: OpsContext): Promise<string> 
   ];
   const recent = policy.recent(5);
   if (recent.length) lines.push('🧾 آخرین عملیات:', ...recent.map((r) => `  - ${r.at} ${r.tool} → ${r.outcome}`));
+  return lines.join('\n');
+}
+
+// Every plan the account can buy, each g2 plan with its feature plans, and the full price.
+export async function plansText({ client }: OpsContext): Promise<string> {
+  const [rawPlans, bundles, balance] = await Promise.all([client.appPlans(), client.bundlePlans().catch(() => ({})), client.balance()]);
+  const catalog = planCatalog(rawPlans, bundles, 0);
+  const lines = [`💰 موجودی: ${fa(Math.round(balance))} تومان`, '📋 پلن‌هایی که این حساب می‌تواند بخرد (قیمت ماهانه):'];
+  for (const p of catalog) {
+    const size = `${fa(p.ramGB)} گیگ رم، ${fa(p.cpu)} هسته`;
+    if (p.generation === 'g2') {
+      lines.push(`- ${p.id} (نسل جدید): ${size} — سرور ${fa(p.monthly)} + پلن امکانات؛ با «${p.defaultBundle ?? '—'}» جمعاً ${fa(p.totalMonthly)} تومان`);
+      for (const b of p.bundles) {
+        lines.push(`    · ${b.id}: +${fa(b.monthly)} تومان — ${b.rollback ? 'برگشت به نسخه‌ی قبلی دارد' : 'برگشت به نسخه‌ی قبلی ندارد'}، ${b.zeroDowntime ? 'دیپلوی بدون قطعی دارد' : 'دیپلوی بدون قطعی ندارد'}، لاگ ${fa(b.logsDays)} روز`);
+      }
+    } else {
+      lines.push(`- ${p.id} (نسل قدیمی، بدون پلن امکانات): ${size} — ${fa(p.totalMonthly)} تومان`);
+    }
+  }
+  lines.push('', 'هزینه‌ی واقعی = سرور + پلن امکانات. برای ساخت: launch_app با planID و (برای پلن‌های g2) bundlePlanID؛ قبل از اجرا کاربر کارت تأیید را می‌بیند.');
   return lines.join('\n');
 }
 

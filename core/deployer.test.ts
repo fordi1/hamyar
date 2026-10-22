@@ -144,6 +144,29 @@ describe('deploySource', () => {
   });
 });
 
+describe('verifyDeployment warm-up', () => {
+  // Real case 2026-10-22: Liara marked the release ready at 10:35:03, the app logged its first line at
+  // 10:35:21, and three rounds 10 s apart all missed it.
+  const ok = summarizeProbe([{ status: 200, ms: 10 }]);
+  const down = summarizeProbe([{ status: 0, ms: 3000 }]);
+
+  it('waits for the first answer of a cold-starting app before the measured rounds', async () => {
+    let calls = 0;
+    const deps: VerifyDeps = { probe: async () => (++calls <= 3 ? down : ok), sleep: async () => {}, rounds: 3, warmupMs: 60_000, warmupIntervalMs: 5_000 };
+    const r = await verifyDeployment({ releases: async () => ({ currentRelease: 'r1' }) } as any, 'shop', 'r1', '/health', deps);
+    expect(r.healthy).toBe(true);
+    expect(r.verification.okRatio).toBe(1);
+    expect(r.verification.warmupMs).toBe(15_000);
+  });
+
+  it('fails with a clear reason when the app never answers within the warm-up', async () => {
+    const deps: VerifyDeps = { probe: async () => down, sleep: async () => {}, rounds: 3, warmupMs: 20_000, warmupIntervalMs: 5_000 };
+    const r = await verifyDeployment({ releases: async () => ({ currentRelease: 'r1' }) } as any, 'shop', 'r1', '/health', deps);
+    expect(r.healthy).toBe(false);
+    expect(r.verification.reason).toMatch(/۲۰ ثانیه/);
+  });
+});
+
 describe('verifyDeployment', () => {
   it('probes the given path in several rounds', async () => {
     const urls: string[] = [];

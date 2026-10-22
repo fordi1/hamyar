@@ -23,7 +23,7 @@ const applyPct = (root) => root.querySelectorAll?.('[data-pct]').forEach((el) =>
 new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => n.nodeType === 1 && (applyPct(n), n.matches('[data-pct]') && applyPct(n.parentNode))))).observe(document.body, { childList: true, subtree: true });
 
 const TOOL_LABELS = {
-  liara_overview: 'مرور حساب لیارا', analyze_project: 'تحلیل پروژه', app_status: 'وضعیت برنامه', get_logs: 'خواندن لاگ‌ها',
+  liara_overview: 'مرور حساب لیارا', list_plans: 'فهرست پلن‌ها', analyze_project: 'تحلیل پروژه', app_status: 'وضعیت برنامه', get_logs: 'خواندن لاگ‌ها',
   diagnose: 'پیدا کردن علت مشکل', verify: 'بررسی نتیجه', check_domain: 'بررسی دامنه', incident_report: 'گزارش حادثه',
   audit_log: 'تاریخچه‌ی عملیات', launch_app: 'ساخت برنامه و دیپلوی', deploy: 'انتشار نسخه‌ی جدید', set_env: 'تنظیم متغیرها',
   restart_app: 'ری‌استارت', turn_on_app: 'روشن کردن برنامه', turn_off_app: 'خاموش کردن برنامه', resize_plan: 'تغییر پلن',

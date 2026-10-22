@@ -141,12 +141,16 @@ describe('launch_app', () => {
   }
   const liara = (overrides: Record<string, any> = {}) => {
     const calls: string[] = [];
+    const nets: { _id: string; name: string }[] = [];
     return {
       calls,
       client: {
         appPlans: async () => ({ 'small-g2': { available: true, RAM: { amount: 0.5 }, CPU: { amount: 0.5 }, price: 659.72, displayPrice: 475000 } }),
         balance: async () => 1_000_000,
-        createApp: async (b: any) => { calls.push(`create:${b.name}`); return {}; },
+        bundlePlans: async () => ({ 'small-g2': { basic: { available: true, price: 381.94, displayPrice: 275000, rollback: true, maxLogsRetention: 7 }, pro: { available: true, price: 1145.83, displayPrice: 825000, rollback: true, maxLogsRetention: 60 } } }),
+        networks: async () => nets,
+        createNetwork: async (name: string) => { calls.push(`network:${name}`); nets.push({ _id: `id-${name}`, name }); return {}; },
+        createApp: async (b: any) => { calls.push(`create:${b.name}:${b.planID}:${b.bundlePlanID}`); return {}; },
         updateEnvs: async (name: string, vars: any[]) => { calls.push(`envs:${name}:${vars.map((v) => v.key).join(',')}`); return {}; },
         uploadSource: async () => { calls.push('upload'); throw Object.assign(new Error('x'), { explanation: 'آپلود ناموفق' }); },
         ...overrides,
@@ -160,7 +164,53 @@ describe('launch_app', () => {
     const r = await runAction({ client, policy: p }, 'launch_app', { app: 'shop', dir: project(), planID: 'small-g2' });
     if (r.status !== 'needs_approval') throw new Error('expected approval');
     expect(r.preview.lines.join(' ')).toMatch(/DATABASE_URL/);
-    expect(r.preview.cost).toMatch(/۴۷۵٬۰۰۰/);
+    // server plan 475,000 + feature plan 275,000
+    expect(r.preview.cost).toMatch(/۷۵۰٬۰۰۰/);
+    expect(r.preview.lines.join(' ')).toMatch(/basic/);
+  });
+
+  it('uses the private network the account has, or creates one first (Liara requires a network)', async () => {
+    for (const existing of [[], [{ _id: 'n1', name: 'team-net' }]]) {
+      const created: any[] = [];
+      let list = existing;
+      const { client, calls } = liara({
+        networks: async () => list,
+        createNetwork: async (name: string) => { calls.push(`network:${name}`); list = [{ _id: 'n-new', name }]; return {}; },
+        createApp: async (b: any) => { created.push(b); return {}; },
+      });
+      const p = policy();
+      const args = { app: 'shop', dir: project(), planID: 'small-g2' };
+      const first = await runAction({ client, policy: p }, 'launch_app', args);
+      if (first.status !== 'needs_approval') throw new Error('expected approval');
+      expect(first.preview.lines.join(' ')).toMatch(existing.length ? /team-net/ : /hamyar-network.*ساخته می‌شود/);
+      p.approvals.decide(first.approvalId, { approved: true, by: 'user', channel: 'dashboard' });
+      await runAction({ client, policy: p }, 'launch_app', args, { approvalId: first.approvalId });
+      expect(calls.filter((x) => x.startsWith('network:'))).toEqual(existing.length ? [] : ['network:hamyar-network']);
+      expect(created[0].network).toBe(existing.length ? 'n1' : 'n-new');
+    }
+  });
+
+  it('refuses an older plan before anything is created (the API takes only g2 plans with a feature plan)', async () => {
+    const { client, calls } = liara({
+      appPlans: async () => ({ 'ir-small': { available: true, RAM: { amount: 0.5 }, CPU: { amount: 0.5 }, price: 1319.44 } }),
+    });
+    const r = await runAction({ client, policy: policy() }, 'launch_app', { app: 'shop', dir: project(), planID: 'ir-small' });
+    expect(r.status).toBe('failed');
+    if (r.status === 'failed') expect(r.error).toMatch(/نسل قدیمی/);
+    expect(calls).toEqual([]);
+  });
+
+  it('sends the chosen feature plan, or the default one, when creating the app', async () => {
+    for (const [bundle, expected] of [[undefined, 'basic'], ['pro', 'pro']] as const) {
+      const { client, calls } = liara();
+      const p = policy();
+      const args = { app: 'shop', dir: project(), planID: 'small-g2', ...(bundle ? { bundlePlanID: bundle } : {}) };
+      const first = await runAction({ client, policy: p }, 'launch_app', args);
+      if (first.status !== 'needs_approval') throw new Error('expected approval');
+      p.approvals.decide(first.approvalId, { approved: true, by: 'user', channel: 'dashboard' });
+      await runAction({ client, policy: p }, 'launch_app', args, { approvalId: first.approvalId });
+      expect(calls.find((x) => x.startsWith('create:'))).toBe(`create:shop:small-g2:${expected}`);
+    }
   });
 
   it('sets env vars after creating the app and before the deploy, and reports a failure after creation honestly', async () => {
@@ -171,9 +221,32 @@ describe('launch_app', () => {
     if (first.status !== 'needs_approval') throw new Error('expected approval');
     p.approvals.decide(first.approvalId, { approved: true, by: 'user', channel: 'dashboard' });
     const r = await runAction({ client, policy: p }, 'launch_app', args, { approvalId: first.approvalId });
-    expect(calls).toEqual(['create:shop', 'envs:shop:DATABASE_URL', 'upload']);
+    expect(calls).toEqual(['network:hamyar-network', 'create:shop:small-g2:basic', 'envs:shop:DATABASE_URL', 'upload']);
     expect(r.status).toBe('failed');
     if (r.status === 'failed') expect(r.error).toMatch(/ساخته شد ولی دیپلوی کامل نشد.*هزینه/);
+  });
+});
+
+describe('deploy preview', () => {
+  function project() {
+    const dir = mkdtempSync(join(tmpdir(), 'hamyar-dep-'));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { start: 'node server.js' } }));
+    writeFileSync(join(dir, 'server.js'), "app.get('/health', () => {}); app.listen(process.env.PORT || 3000)");
+    return dir;
+  }
+  const bundles = { 'small-g2': { basic: { available: true, price: 381.94, displayPrice: 275000, rollback: true, zeroDowntime: false }, standard: { available: true, price: 659.72, displayPrice: 475000, rollback: true, zeroDowntime: true } } };
+  const client = (bundlePlanID: string) => ({
+    releases: async () => ({ currentRelease: 'r1' }),
+    getApp: async () => ({ planID: 'small-g2', bundlePlanID }),
+    bundlePlans: async () => bundles,
+  }) as any;
+
+  it('promises no downtime only when the app feature plan has zero-downtime deploys', async () => {
+    const basic = await ACTIONS.deploy.preview(client('basic'), { app: 'shop', dir: project() });
+    expect(basic.downtime).toMatch(/قطعی کوتاه/);
+    expect(basic.downtime).toMatch(/basic/);
+    const standard = await ACTIONS.deploy.preview(client('standard'), { app: 'shop', dir: project() });
+    expect(standard.downtime).toMatch(/بدون قطعی/);
   });
 });
 

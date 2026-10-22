@@ -326,16 +326,18 @@ async function wizard(req: IncomingMessage, res: ServerResponse, url: URL) {
         return json(res, 200, { source: publicSource(s) });
       }
       case 'POST /api/wizard/analyze': {
-        const { sourceId, subdir = '' } = await body(req);
+        const { sourceId, subdir = '', blocked } = await body(req);
         const s = sourceFor(sourceId);
         const dir = sources.projectDir(s, String(subdir));
         const hint = String(subdir).split('/').filter(Boolean).pop() || s.label.replace(/@.*$/, '').split('/').pop() || 'my-app';
-        return json(res, 200, await analyzeSource(ctx, dir, hint));
+        // plans Liara refused for this account earlier in the wizard (e.g. the g2 family)
+        const refused = Array.isArray(blocked) ? blocked.map(String).filter((b) => /^[a-z0-9-]{1,40}$/.test(b)).slice(0, 20) : undefined;
+        return json(res, 200, await analyzeSource(ctx, dir, hint, { blocked: refused }));
       }
       case 'POST /api/wizard/request': {
-        const { sourceId, subdir = '', app, planID, keys = [] } = await body(req);
+        const { sourceId, subdir = '', app, planID, bundlePlanID, keys = [] } = await body(req);
         const dir = sources.projectDir(sourceFor(sourceId), String(subdir));
-        return json(res, 200, await requestDeploy(ctx, { dir, app: String(app ?? ''), planID: String(planID ?? ''), keys: Array.isArray(keys) ? keys.map(String) : [] }));
+        return json(res, 200, await requestDeploy(ctx, { dir, app: String(app ?? ''), planID: String(planID ?? ''), bundlePlanID: bundlePlanID ? String(bundlePlanID) : undefined, keys: Array.isArray(keys) ? keys.map(String) : [] }));
       }
       case 'POST /api/wizard/cancel': {
         const { id, reason } = await body(req);

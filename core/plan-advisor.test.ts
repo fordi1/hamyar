@@ -1,5 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import { recommendPlan, toPlanList } from './plan-advisor.js';
+import { defaultBundle, deployablePlans, planCatalog, recommendPlan, toBundleList, toPlanList } from './plan-advisor.js';
+
+// Subset of the real `GET /v1/me` → plans.projectBundlePlans['small-g2'] (2026-10-22).
+const BUNDLES = {
+  free: { available: false, price: 0, displayPrice: 0, rollback: false, zeroDowntime: false, maxLogsRetention: 0.05, maxReleaseRetention: 1 },
+  basic: { available: true, price: 381.94, displayPrice: 275000, rollback: true, zeroDowntime: false, maxLogsRetention: 7, maxReleaseRetention: 10 },
+  standard: { available: true, price: 659.72, displayPrice: 475000, rollback: true, zeroDowntime: true, maxLogsRetention: 30, maxReleaseRetention: 10 },
+  pro: { available: true, price: 1145.83, displayPrice: 825000, rollback: true, zeroDowntime: true, maxLogsRetention: 60, maxReleaseRetention: 10 },
+};
+
+describe('feature bundle plans', () => {
+  it('lists the available bundles of a plan with their prices and features', () => {
+    const list = toBundleList({ 'small-g2': BUNDLES }, 'small-g2');
+    expect(list.map((b) => b.id)).toEqual(['basic', 'standard', 'pro']);
+    expect(list[0]).toMatchObject({ id: 'basic', hourly: 381.94, monthly: 275000, rollback: true, zeroDowntime: false, logsDays: 7 });
+    expect(toBundleList({}, 'small-g2')).toEqual([]);
+  });
+
+  it('defaults to the cheapest bundle that can roll back', () => {
+    expect(defaultBundle(toBundleList({ 'small-g2': BUNDLES }, 'small-g2'))?.id).toBe('basic');
+    const noRollback = { a: { available: true, price: 1, displayPrice: 720, rollback: false } };
+    expect(defaultBundle(toBundleList({ 'x-g2': noRollback }, 'x-g2'))?.id).toBe('a');
+    expect(defaultBundle([])).toBeUndefined();
+  });
+
+  it('recommends only g2 plans, like the Liara CLI (other plans need no bundle and are not offered)', () => {
+    expect(deployablePlans(RAW).map((p) => p.id)).toEqual(['small-g2', 'medium-g2', 'standard-base-g2', 'standard-plus-g2']);
+  });
+});
+
+describe('planCatalog', () => {
+  const bundles = { 'small-g2': BUNDLES, 'medium-g2': BUNDLES };
+
+  it('lists every plan a new app can be created on, with its feature plans, full price and whether it fits', () => {
+    const c = planCatalog(RAW, bundles, 0.5);
+    // older plans (ir-small) are listed by Liara, but its create endpoint only takes bundlePlanID
+    // free/basic/standard/pro (real API 2026-10-22) and the CLI offers only g2 plans
+    expect(c.map((p) => p.id)).toEqual(['small-g2', 'medium-g2', 'standard-base-g2', 'standard-plus-g2']);
+    const small = c.find((p) => p.id === 'small-g2')!;
+    expect(small).toMatchObject({ generation: 'g2', fits: true, defaultBundle: 'basic', totalMonthly: 750000 });
+    expect(small.bundles.map((b) => b.id)).toEqual(['basic', 'standard', 'pro']);
+    expect(c.some((p) => p.id === 'ir-small')).toBe(false);
+  });
+
+  it('marks plans with less memory than the project needs', () => {
+    const c = planCatalog(RAW, bundles, 1);
+    expect(c.find((p) => p.id === 'small-g2')?.fits).toBe(false);
+    expect(c.find((p) => p.id === 'medium-g2')?.fits).toBe(true);
+  });
+
+  it('can leave out plans the account turned out not to be allowed to buy', () => {
+    expect(planCatalog(RAW, bundles, 0.5, { blocked: ['g2'] })).toEqual([]);
+    expect(planCatalog(RAW, bundles, 0.5, { blocked: ['small-g2'] }).some((p) => p.id === 'small-g2')).toBe(false);
+  });
+});
 
 // Subset of the real `GET /v1/me` → plans.projects payload (2026-10-21).
 const RAW = {

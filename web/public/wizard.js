@@ -21,7 +21,7 @@ const APP_NAME = /^[a-z][a-z0-9-]*[a-z0-9]$/;
 
 // Saved across refreshes: everything except env values.
 const wiz = Object.assign(
-  { step: 1, origin: 'github', github: { url: '', branch: '', subdir: '' }, localPath: '', zipSubdir: '', source: null, subdir: '', analysis: null, planID: '', app: '', request: null },
+  { step: 1, origin: 'github', github: { url: '', branch: '', subdir: '' }, localPath: '', zipSubdir: '', source: null, subdir: '', analysis: null, planID: '', bundleID: '', blocked: [], app: '', request: null },
   (() => {
     try {
       return JSON.parse(sessionStorage.getItem('hamyar_wizard') || '{}');
@@ -177,7 +177,7 @@ async function fetchSource() {
     wiz.subdir = wiz.origin === 'github' ? wiz.github.subdir : wiz.origin === 'zip' ? wiz.zipSubdir : '';
     wiz.busy = 'در حال بررسی پروژه…';
     renderWizard();
-    wiz.analysis = await post('/api/wizard/analyze', { sourceId: wiz.source.id, subdir: wiz.subdir });
+    wiz.analysis = await post('/api/wizard/analyze', { sourceId: wiz.source.id, subdir: wiz.subdir, blocked: wiz.blocked });
     const rec = wiz.analysis.plans.find((p) => p.role === 'recommended');
     wiz.planID = (rec?.affordable ? rec : wiz.analysis.plans.find((p) => p.affordable) || rec)?.id || '';
     wiz.app = wiz.analysis.app;
@@ -192,12 +192,43 @@ async function fetchSource() {
 
 // ---------- step 2: what Hamyar found and which plan ----------
 
+// the plan and feature plan the user picked (defaults: Hamyar's recommendation, cheapest bundle with rollback)
+const chosenPlan = () => (wiz.analysis?.catalog || []).find((p) => p.id === wiz.planID) || wiz.analysis?.plans.find((p) => p.id === wiz.planID);
+const chosenBundle = (p) => (p?.bundles?.length ? p.bundles.find((b) => b.id === wiz.bundleID) || p.bundle : undefined);
+const totals = (p, b) => ({ monthly: p.monthly + (b?.monthly ?? 0), hourly: p.hourly + (b?.hourly ?? 0) });
+const canAfford = (p, b) => wiz.analysis.balance >= totals(p, b).hourly * 24;
+const ramLabel = (gb) => (gb < 1 ? `${fa(gb * 1024)} مگابایت` : `${fa(gb)} گیگابایت`);
+
+function bundlePicker(p) {
+  if (!p?.bundles?.length) return p ? '<p class="note-sm">این پلن از نسل قدیمی لیاراست و پلن امکانات جداگانه ندارد؛ قیمتش همان قیمت کامل است.</p>' : '';
+  const current = chosenBundle(p);
+  return `<div class="bundles" role="radiogroup" aria-label="پلن امکانات">${p.bundles
+    .map((b) => `<button type="button" class="bundle" role="radio" aria-checked="${b.id === current?.id}" data-bundle="${esc(b.id)}">
+      <b>${esc(b.id)}</b><span class="price">+${fa(b.monthly)} <small>تومان در ماه</small></span>
+      <small>${b.rollback ? 'برگشت به نسخه‌ی قبلی دارد' : 'برگشت به نسخه‌ی قبلی ندارد'} · ${b.zeroDowntime ? 'دیپلوی بدون قطعی دارد' : 'دیپلوی بدون قطعی ندارد'} · لاگ ${fa(b.logsDays)} روز</small>
+    </button>`)
+    .join('')}</div>`;
+}
+
+function catalogList(a) {
+  return `<details class="details card" ${wiz.showAll ? 'open' : ''} id="all-plans"><summary>همه‌ی پلن‌هایی که حساب شما می‌تواند بخرد (${fa(a.catalog.length)})</summary>
+    <div class="plan-rows" role="radiogroup" aria-label="همه‌ی پلن‌ها">${a.catalog
+      .map((p) => `<button type="button" class="plan-row" role="radio" aria-checked="${p.id === wiz.planID}" data-plan="${esc(p.id)}">
+        <b>${esc(p.id)}</b>
+        <span>${ramLabel(p.ramGB)} رم · ${fa(p.cpu)} هسته</span>
+        <span class="price">${fa(p.totalMonthly)} <small>تومان در ماه${p.bundle ? ' با امکانات' : ''}</small></span>
+        <span class="tags">${p.generation === 'g2' ? '<span class="chip-i">نسل جدید g2</span>' : '<span class="chip-i warn">نسل قدیمی</span>'}${p.fits ? '' : '<span class="chip-i bad">رم کمتر از نیاز</span>'}${p.affordable ? '' : '<span class="chip-i bad">موجودی کافی نیست</span>'}</span>
+      </button>`)
+      .join('')}</div></details>`;
+}
+
 function planCard(p) {
   const checked = p.id === wiz.planID;
   return `<button type="button" class="plan ${p.role}" role="radio" aria-checked="${checked}" ${p.affordable ? '' : 'aria-disabled="true"'} data-plan="${esc(p.id)}">
     <div class="plan-head"><b>${esc(p.id)}</b>${p.role === 'recommended' ? `<span class="rec">${ROLE_LABEL.recommended}</span>` : `<span class="note-sm">${ROLE_LABEL[p.role]}</span>`}</div>
     <ul><li>${icon('cpu')}${fa(p.cpu)} هسته پردازنده</li><li>${icon('ram')}${p.ramGB < 1 ? `${fa(p.ramGB * 1024)} مگابایت` : `${fa(p.ramGB)} گیگابایت`} حافظه</li></ul>
-    <span class="price">${fa(p.monthly)} <small>تومان در ماه</small></span>
+    <span class="price">${fa(p.totalMonthly ?? p.monthly)} <small>تومان در ماه</small></span>
+    ${p.bundle ? `<span class="why">سرور ${fa(p.monthly)} + امکانات «${esc(p.bundle.id)}» ${fa(p.bundle.monthly)}${p.bundle.rollback ? ' · برگشت به نسخه‌ی قبلی' : ''} · لاگ ${fa(p.bundle.logsDays)} روز</span>` : ''}
     ${p.affordable ? '' : '<span class="why bad">موجودی برای یک روز این پلن کافی نیست</span>'}
   </button>`;
 }
@@ -213,8 +244,10 @@ function stepPlan() {
     a.env.required.length ? `<span class="chip-i warn">${icon('key')}${fa(a.env.required.length)} متغیر محیطی لازم است</span>` : '<span class="chip-i ok">متغیر محیطی لازم ندارد</span>',
   ].join('');
   const warnings = [...(d.conflict ? [d.conflict] : []), ...d.warnings].map((w) => `<p class="form-warn">${icon('alert')}<span>${esc(w)}</span></p>`).join('');
-  const none = !a.plans.some((p) => p.affordable);
-  const selected = a.plans.find((p) => p.id === wiz.planID);
+  const none = !(a.catalog || a.plans).some((p) => p.affordable);
+  const selected = chosenPlan();
+  const bundle = chosenBundle(selected);
+  const sum = selected ? totals(selected, bundle) : undefined;
   return `
     <div class="h-title"><h1>تحلیل پروژه کامل شد</h1><p>${esc(wiz.source.label)}${wiz.subdir ? ` / ${esc(wiz.subdir)}` : ''} · ${fa(a.fileCount)} فایل</p></div>
     <section class="card">
@@ -224,7 +257,11 @@ function stepPlan() {
       <details class="details"><summary>جزئیات فنی</summary><ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul><pre>${esc(JSON.stringify(a.liaraJson, null, 2))}</pre></details>
     </section>
     <h2 class="h-title plans-title">پلن پیشنهادی همیار</h2>
+    ${wiz.blocked.length ? `<p class="form-warn">${icon('alert')}<span>لیارا این پلن‌ها را برای حساب شما نساخت و از فهرست کنار گذاشته شدند: ${esc(wiz.blocked.join('، '))}</span></p>` : ''}
     <div class="plans" role="radiogroup" aria-label="پلن">${a.plans.map(planCard).join('')}</div>
+    ${a.catalog ? catalogList(a) : ''}
+    ${selected ? `<section class="card"><h2>پلن امکانات برای <bdi>${esc(selected.id)}</bdi></h2>${bundlePicker(selected)}
+      <p class="choice">انتخاب شما: <bdi>${esc(selected.id)}</bdi>${bundle ? ` + امکانات «${esc(bundle.id)}»` : ''} = <b>${fa(sum.monthly)} تومان در ماه</b> (ساعتی حدود ${fa(Math.round(sum.hourly))} تومان)${selected.fits ? '' : ' · ⚠️ رم این پلن از نیاز پروژه کمتر است'}</p></section>` : ''}
     <details class="details card"><summary>چرا این پلن؟</summary><ul>${a.planReasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></details>
     <p class="note-sm center">قیمت‌ها از فهرست زنده‌ی پلن‌های لیارا · موجودی حساب: ${fa(Math.round(a.balance))} تومان</p>
     ${none ? `<p class="form-warn">${icon('wallet')}<span>موجودی حساب برای هیچ‌کدام از این پلن‌ها کافی نیست. همیار نمی‌تواند حساب را شارژ کند؛ از کنسول لیارا شارژ کنید و بعد «بررسی دوباره‌ی موجودی» را بزنید.</span></p>` : ''}
@@ -232,25 +269,35 @@ function stepPlan() {
     <div class="wizard-actions">
       <button class="btn" type="button" data-go="1">قبلی</button>
       ${none ? `<a class="btn" href="https://console.liara.ir" target="_blank" rel="noopener">${icon('link')}کنسول لیارا</a><button class="btn" type="button" id="recheck">${wiz.busy ? busyLabel('در حال بررسی…') : 'بررسی دوباره‌ی موجودی'}</button>` : ''}
-      <button class="btn primary end" type="button" id="plan-next" ${selected?.affordable ? '' : 'disabled'}>ادامه</button>
+      <button class="btn primary end" type="button" id="plan-next" ${selected && canAfford(selected, bundle) ? '' : 'disabled'}>ادامه</button>
     </div>`;
 }
 
 function bindPlan() {
-  wizEl().querySelectorAll('.plan').forEach((b) =>
+  wizEl().querySelectorAll('.plan, .plan-row').forEach((b) =>
     b.addEventListener('click', () => {
       if (b.getAttribute('aria-disabled') === 'true') return;
       wiz.planID = b.dataset.plan;
+      wiz.bundleID = '';
+      wiz.showAll = Boolean(b.closest('#all-plans'));
       saveWiz();
       renderWizard();
     }),
   );
+  wizEl().querySelectorAll('.bundle').forEach((b) =>
+    b.addEventListener('click', () => {
+      wiz.bundleID = b.dataset.bundle;
+      saveWiz();
+      renderWizard();
+    }),
+  );
+  $('#all-plans')?.addEventListener('toggle', (e) => (wiz.showAll = e.target.open));
   $('#plan-next').addEventListener('click', () => go(3));
   $('#recheck')?.addEventListener('click', async () => {
     wiz.busy = true;
     renderWizard();
     try {
-      wiz.analysis = await post('/api/wizard/analyze', { sourceId: wiz.source.id, subdir: wiz.subdir });
+      wiz.analysis = await post('/api/wizard/analyze', { sourceId: wiz.source.id, subdir: wiz.subdir, blocked: wiz.blocked });
       wiz.planID = (wiz.analysis.plans.find((p) => p.role === 'recommended' && p.affordable) || wiz.analysis.plans.find((p) => p.affordable) || {}).id || wiz.planID;
     } catch (err) {
       wiz.error = err.message;
@@ -327,7 +374,7 @@ function bindSettings() {
     wiz.error = '';
     renderWizard();
     try {
-      wiz.request = await post('/api/wizard/request', { sourceId: wiz.source.id, subdir: wiz.subdir, app: wiz.app, planID: wiz.planID, keys: wiz.analysis.env.required.map((x) => x.name) });
+      wiz.request = await post('/api/wizard/request', { sourceId: wiz.source.id, subdir: wiz.subdir, app: wiz.app, planID: wiz.planID, bundlePlanID: chosenBundle(chosenPlan())?.id, keys: wiz.analysis.env.required.map((x) => x.name) });
       wiz.busy = false;
       go(4);
     } catch (err) {
@@ -381,7 +428,7 @@ function progressView() {
     <section class="card"><ol class="tl">${rows}</ol></section>
     ${r.detached && !failed ? `<p class="form-warn">${icon('alert')}<span>صفحه تازه‌سازی شد و اتصال به این دیپلوی قطع شد. دیپلوی روی سرور ادامه دارد؛ نتیجه را در «آخرین عملیات» صفحه‌ی اصلی ببینید.</span></p><div class="wizard-actions"><button class="btn" type="button" id="wiz-new">دیپلوی پروژه‌ی دیگر</button><button class="btn primary end" type="button" id="wiz-home">رفتن به داشبورد</button></div>` : ''}
     ${failed ? `<p class="form-error" role="alert">${icon('alert')}<span>${esc(r.error)}</span></p>
-      <div class="wizard-actions"><button class="btn" type="button" id="wiz-home">بازگشت به داشبورد</button><button class="btn primary end" type="button" id="wiz-diagnose">${icon('bug')}بررسی علت</button></div>` : ''}`;
+      <div class="wizard-actions"><button class="btn" type="button" id="wiz-home">بازگشت به داشبورد</button>${r.phase === 'PREPARING' ? `<button class="btn" type="button" id="wiz-other-plan">${icon('server')}انتخاب پلن دیگر</button>` : ''}<button class="btn primary end" type="button" id="wiz-diagnose">${icon('bug')}بررسی علت</button></div>` : ''}`;
 }
 
 function resultView() {
@@ -420,7 +467,7 @@ async function selectApp(app) {
 
 function resetWizard() {
   sessionStorage.removeItem('hamyar_wizard');
-  Object.assign(wiz, { step: 1, run: null, source: null, subdir: '', analysis: null, planID: '', app: '', request: null, values: {}, run: null, error: '', busy: false, zipFile: null });
+  Object.assign(wiz, { step: 1, run: null, source: null, subdir: '', analysis: null, planID: '', bundleID: '', blocked: [], app: '', request: null, values: {}, run: null, error: '', busy: false, zipFile: null });
 }
 
 function bindDeploy() {
@@ -449,6 +496,24 @@ function bindDeploy() {
   $('#wiz-new')?.addEventListener('click', () => {
     resetWizard();
     renderWizard();
+  });
+  // creation failed (nothing was built): back to the plans; Liara's g2 refusal removes that family
+  $('#wiz-other-plan')?.addEventListener('click', async () => {
+    if (/g2/.test(wiz.run?.error || '') && !wiz.blocked.includes('g2')) wiz.blocked.push('g2');
+    wiz.run = null;
+    wiz.request = null;
+    wiz.bundleID = '';
+    wiz.busy = 'در حال خواندن دوباره‌ی پلن‌ها…';
+    try {
+      wiz.analysis = await post('/api/wizard/analyze', { sourceId: wiz.source.id, subdir: wiz.subdir, blocked: wiz.blocked });
+      wiz.planID = (wiz.analysis.plans.find((p) => p.role === 'recommended') || wiz.analysis.catalog[0] || {}).id || '';
+      wiz.busy = false;
+      go(2);
+    } catch (err) {
+      wiz.busy = false;
+      wiz.error = err.message;
+      go(2);
+    }
   });
   $('#wiz-diagnose')?.addEventListener('click', () => {
     const app = wiz.app;

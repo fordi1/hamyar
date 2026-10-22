@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import type { LiaraClient } from './liara-client.js';
 import { Policy, PolicyError, type Tier } from './policy.js';
 import { ApprovalError } from './approvals.js';
-import { toPlanList } from './plan-advisor.js';
+import { defaultBundle, toBundleList, toPlanList, type FeatureBundle } from './plan-advisor.js';
 import { detectProject } from './detect.js';
 import { listFiles } from './pack.js';
 import { appUrl, deploySource, verifyDeployment, waitForRelease, type DeployEvent, type VerifyDeps } from './deployer.js';
@@ -104,6 +104,34 @@ async function rollbackTarget(c: LiaraClient, app: string, releaseID: string) {
 async function planInfo(client: LiaraClient, planID: string) {
   return toPlanList({ [planID]: { ...(await client.appPlans())[planID], available: true } })[0];
 }
+
+// The feature plan a new app gets: the one asked for, else the cheapest with rollback.
+// Preview and execute both call this, so the approved card and the created app match.
+async function bundleFor(client: LiaraClient, planID: string, bundlePlanID?: string): Promise<FeatureBundle | undefined> {
+  if (!planID.includes('g2')) {
+    throw new Error(`پلن ${planID} از نسل قدیمی لیاراست و API لیارا برنامه‌ی جدید را فقط روی پلن‌های g2 (با پلن امکانات) می‌سازد؛ یک پلن g2 انتخاب کنید (list_plans).`);
+  }
+  const list = toBundleList(await client.bundlePlans().catch(() => ({})), planID);
+  if (bundlePlanID) {
+    const chosen = list.find((b) => b.id === bundlePlanID);
+    if (!chosen) throw new Error(`پلن امکانات «${bundlePlanID}» برای پلن ${planID} در دسترس نیست.`);
+    return chosen;
+  }
+  return defaultBundle(list);
+}
+
+export const DEFAULT_NETWORK = 'hamyar-network';
+
+// The private network a new app joins: the one asked for, else the first the account has,
+// else hamyar-network, which launch_app creates right after approval.
+async function networkFor(client: LiaraClient, wanted?: string): Promise<{ name: string; id?: string }> {
+  const list = await client.networks().catch(() => []);
+  const found = wanted ? list.find((n) => n.name === wanted) : list[0];
+  return found ? { name: found.name, id: found._id } : { name: wanted ?? DEFAULT_NETWORK };
+}
+
+const bundleLine = (b: FeatureBundle) =>
+  `پلن امکانات: ${b.id} — ماهانه ${fa(b.monthly)} تومان؛ ${b.rollback ? 'برگشت به نسخه‌ی قبلی دارد' : 'برگشت به نسخه‌ی قبلی ندارد'}، ${b.zeroDowntime ? 'دیپلوی بدون قطعی دارد' : 'دیپلوی بدون قطعی ندارد'}، نگهداری لاگ ${fa(b.logsDays)} روز`;
 
 // ---------- catalogue ----------
 
@@ -233,7 +261,18 @@ export const ACTIONS: Record<string, ActionDef> = {
       const d = detectProject(dir);
       const files = listFiles(dir, d.platform).length;
       const health = healthFor(dir, port ?? d.port);
-      const { currentRelease } = await c.releases(app, 1).catch(() => ({ currentRelease: undefined }));
+      const [{ currentRelease }, info, bundles] = await Promise.all([
+        c.releases(app, 1).catch(() => ({ currentRelease: undefined })),
+        c.getApp(app).catch(() => undefined),
+        c.bundlePlans().catch(() => ({})),
+      ]);
+      // zero-downtime deploys are a feature-plan option (e.g. not in "basic")
+      const bundle = info?.planID && info?.bundlePlanID ? toBundleList(bundles, info.planID).find((b) => b.id === info.bundlePlanID) : undefined;
+      const downtime = !currentRelease
+        ? 'ندارد (اولین نسخه)'
+        : bundle && !bundle.zeroDowntime
+          ? `ممکن است قطعی کوتاه داشته باشد؛ پلن امکانات «${bundle.id}» دیپلوی بدون قطعی ندارد`
+          : 'بدون قطعی (نسخه‌ی قبلی تا آماده و سالم شدن نسخه‌ی جدید کار می‌کند)';
       return {
         title: `انتشار نسخه‌ی جدید ${app}`,
         lines: [
@@ -244,7 +283,7 @@ export const ACTIONS: Record<string, ActionDef> = {
           currentRelease ? `نسخه‌ی فعلی برای برگشت: ${currentRelease}` : 'این اولین نسخه است.',
         ],
         risk: 'اگر نسخه‌ی جدید سالم نباشد، موفق اعلام نمی‌شود و همیار راه برگشت را پیشنهاد می‌دهد',
-        downtime: 'بدون قطعی (نسخه‌ی قبلی تا آماده و سالم شدن نسخه‌ی جدید کار می‌کند)',
+        downtime,
         undo: currentRelease ? `برگشت به ${currentRelease}` : 'خاموش کردن برنامه',
       };
     },
@@ -260,22 +299,28 @@ export const ACTIONS: Record<string, ActionDef> = {
     async preview(c, args) {
       const { app, dir, planID } = args;
       const d = detectProject(dir);
-      const plan = await planInfo(c, planID);
+      const [plan, bundle, network] = await Promise.all([planInfo(c, planID), bundleFor(c, planID, args.bundlePlanID), networkFor(c, args.network)]);
       const balance = await c.balance();
+      const hourly = (plan?.hourly ?? 0) + (bundle?.hourly ?? 0);
+      const monthly = (plan?.monthly ?? 0) + (bundle?.monthly ?? 0);
       const provided = resolveEnvArgs(args).map((v) => v.key);
       const missing = scanEnv(dir).missing.filter((m) => !m.optional && !provided.includes(m.name)).map((m) => m.name);
       return {
         title: `ساخت برنامه‌ی ${app} و اولین دیپلوی`,
         lines: [
           `پلتفرم: ${d.platform}، پورت: ${d.port}`,
-          `پلن: ${planID} — ${fa(plan?.ramGB ?? 0)} گیگ رم، ${fa(plan?.cpu ?? 0)} CPU`,
+          `پلن: ${planID} — ${fa(plan?.ramGB ?? 0)} گیگ رم، ${fa(plan?.cpu ?? 0)} CPU، ماهانه ${fa(plan?.monthly ?? 0)} تومان`,
+          ...(bundle ? [bundleLine(bundle)] : []),
+          network.id
+            ? `شبکه‌ی خصوصی: ${network.name} (از قبل در حساب هست)`
+            : `شبکه‌ی خصوصی ${network.name} ساخته می‌شود؛ لیارا برای ساخت برنامه شبکه لازم دارد و دیتابیس هم بعداً به همین شبکه وصل می‌شود (در فهرست قیمت لیارا هزینه‌ی جداگانه‌ای برای شبکه نیامده)`,
           `آدرس: ${appUrl(app)}`,
           `موجودی حساب: ${fa(Math.round(balance))} تومان`,
           ...(provided.length ? [`متغیرهایی که قبل از دیپلوی تنظیم می‌شوند: ${provided.join('، ')} (مقدارها مخفی است)`] : []),
           ...(missing.length ? [`⚠️ کد این متغیرها را لازم دارد ولی مقداری برایشان داده نشده: ${missing.join('، ')} — احتمالاً سایت بعد از دیپلوی خطا می‌دهد`] : []),
           ...d.warnings.map((w) => `⚠️ ${w}`),
         ],
-        cost: `ماهانه حدود ${fa(plan?.monthly ?? 0)} تومان (ساعتی ${fa(Math.round(plan?.hourly ?? 0))} تومان)`,
+        cost: `ماهانه حدود ${fa(monthly)} تومان (ساعتی ${fa(Math.round(hourly))} تومان)${bundle ? '، پلن و امکانات با هم' : ''}`,
         risk: 'از موجودی حساب کسر می‌شود',
         downtime: '—',
         undo: 'خاموش کردن برنامه با همیار، یا حذف از کنسول لیارا',
@@ -285,8 +330,16 @@ export const ACTIONS: Record<string, ActionDef> = {
       const { app, dir, planID, message } = args;
       const d = detectProject(dir);
       const variables = resolveEnvArgs(args);
+      const bundle = await bundleFor(c, planID, args.bundlePlanID);
+      let network = await networkFor(c, args.network);
+      if (!network.id) {
+        onEvent({ phase: 'PREPARING', message: `ساخت شبکه‌ی خصوصی ${network.name}` });
+        await c.createNetwork(network.name);
+        network = await networkFor(c, network.name);
+        if (!network.id) throw new Error(`شبکه‌ی ${network.name} ساخته شد ولی در فهرست شبکه‌های لیارا پیدا نشد؛ کمی بعد دوباره امتحان کنید.`);
+      }
       onEvent({ phase: 'PREPARING', message: 'ساخت برنامه' });
-      await c.createApp({ name: app, planID, platform: d.platform });
+      await c.createApp({ name: app, planID, platform: d.platform, network: network.id, ...(bundle ? { bundlePlanID: bundle.id } : {}) });
       // From here on the app exists and is billed: never fail silently.
       try {
         if (variables.length) await c.updateEnvs(app, variables);

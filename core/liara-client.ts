@@ -30,6 +30,8 @@ function explain(status: number, body: any): string {
   if (status === 403) return 'این کلید اجازه‌ی انجام این کار را ندارد.';
   if (status === 404) return 'برنامه یا منبع موردنظر در لیارا پیدا نشد؛ نام برنامه را بررسی کنید.';
   if (status === 409) return 'این نام قبلاً استفاده شده یا عملیات دیگری در حال انجام است.';
+  if (message === 'g2_plan_unavailable')
+    return 'لیارا ساخت برنامه روی پلن‌های نسل جدید (g2) را برای این حساب یا تیم فعال نکرده است. یک پلن دیگر انتخاب کنید یا از پشتیبانی لیارا بپرسید چرا g2 برای حساب شما بسته است.';
   if (message === 'frozen_project' || /balance|credit/i.test(message))
     return 'موجودی حساب لیارا کافی نیست؛ لطفاً حساب را از کنسول شارژ کنید.';
   if (status === 429) return 'تعداد درخواست‌ها زیاد شده؛ چند ثانیه صبر کنید.';
@@ -110,6 +112,10 @@ export class LiaraClient {
   async appPlans(): Promise<Record<string, any>> {
     return (await this.me()).plans?.projects ?? {};
   }
+  // feature plans per app plan; g2 apps cannot be created without one (`g2_plan_unavailable`)
+  async bundlePlans(): Promise<Record<string, any>> {
+    return (await this.me()).plans?.projectBundlePlans ?? {};
+  }
 
   // ---------- apps ----------
   async listApps(): Promise<any[]> {
@@ -118,7 +124,15 @@ export class LiaraClient {
   async getApp(name: string): Promise<any> {
     return (await this.request<any>('GET', `/v1/projects/${name}`)).project;
   }
-  createApp(body: { name: string; planID: string; platform: string; network?: string; readOnlyRootFilesystem?: boolean }) {
+  // private networks: Liara requires one when creating an app (`network_is_required`); apps and
+  // databases on the same network reach each other privately
+  async networks(): Promise<{ _id: string; name: string }[]> {
+    return (await this.request<any>('GET', '/v1/networks')).networks ?? [];
+  }
+  createNetwork(name: string) {
+    return this.request<any>('POST', '/v1/networks', { json: { networkName: name } });
+  }
+  createApp(body: { name: string; planID: string; platform: string; bundlePlanID?: string; network?: string; readOnlyRootFilesystem?: boolean }) {
     return this.request<any>('POST', '/v1/projects', { json: body });
   }
   restart(name: string) {
@@ -141,7 +155,8 @@ export class LiaraClient {
   // ---------- deploy ----------
   async uploadSource(name: string, archivePath: string): Promise<string> {
     const form = new FormData();
-    form.append('file', new Blob([readFileSync(archivePath)]), basename(archivePath));
+    // typed like the CLI's form-data upload; an untyped part is refused ("Allowed types: gzip, zip")
+    form.append('file', new Blob([readFileSync(archivePath)], { type: 'application/gzip' }), basename(archivePath));
     const r = await this.request<{ sourceID: string }>('POST', `/v2/projects/${name}/sources`, { form, timeoutMs: 10 * 60_000 });
     return r.sourceID;
   }
@@ -166,8 +181,43 @@ export class LiaraClient {
   }
 
   // ---------- observability ----------
-  logs(name: string, sinceUnix: number): Promise<{ type: string; datetime: string; message: string }[]> {
-    return this.request('GET', `/v1/projects/${name}/logs`, { query: { since: sinceUnix } });
+  // The v1 endpoint now only answers "Please upgrade your client"; this is what `liara logs`
+  // reads (CLI src/commands/app/logs.ts): {data: [{metaData, values: [[ns timestamp, line]]}]},
+  // each line JSON with `_entry` and `type`.
+  // Pages are capped (100 lines counted forward from `start`), so like the CLI we keep reading
+  // from the last line's second until a short page; the boundary second is de-duplicated.
+  async logs(name: string, sinceUnix: number, maxPages = 30): Promise<{ type: string; datetime: string; message: string }[]> {
+    const out: { type: string; datetime: string; message: string }[] = [];
+    const seen = new Set<string>();
+    let start = sinceUnix;
+    for (let pageNo = 0; pageNo < maxPages; pageNo++) {
+      const r = await this.request<any>('GET', `/v2/projects/${name}/logs`, { query: { start, direction: 'forward' } });
+      let count = 0;
+      let lastSec = start;
+      for (const stream of r?.data ?? []) {
+        for (const [ts, line] of stream?.values ?? []) {
+          count++;
+          const stamp = String(ts);
+          const ms = stamp.length >= 13 ? Number(stamp.slice(0, 13)) : Number(stamp) * 1000;
+          lastSec = Math.max(lastSec, Math.floor(ms / 1000));
+          if (seen.has(`${stamp}|${line}`)) continue;
+          seen.add(`${stamp}|${line}`);
+          let message = String(line ?? '');
+          let type = 'stdout';
+          try {
+            const parsed = JSON.parse(message);
+            if (parsed && typeof parsed === 'object' && '_entry' in parsed) {
+              message = String(parsed._entry ?? '');
+              type = parsed.type === 'stderr' ? 'stderr' : 'stdout';
+            }
+          } catch {}
+          out.push({ type, datetime: new Date(ms).toISOString(), message });
+        }
+      }
+      if (count < 100 || lastSec <= start) break;
+      start = lastSec;
+    }
+    return out.sort((a, b) => a.datetime.localeCompare(b.datetime));
   }
   events(name: string, startUnix?: number, endUnix?: number) {
     return this.request<any>('GET', `/v1/projects/${name}/events`, { query: { start: startUnix, end: endUnix } });

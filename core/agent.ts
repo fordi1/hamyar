@@ -183,6 +183,7 @@ export function buildTools(ctx: OpsContext): AgentTool[] {
 
   return [
     read('liara_overview', 'Account balance, apps with status and plan, safety mode, latest actions.', obj({}), () => ops.overview(ctx)),
+    read('list_plans', 'Every plan this Liara account can buy, with the feature plans (bundlePlanID) of g2 plans and the full monthly price. Use when the user asks which plans exist, wants to choose one, or a plan was refused.', obj({}), () => ops.plansText(ctx)),
     read('analyze_project', 'Analyze a project folder on the server for deployment: platform, port, needed env vars, recommended plan with price, balance check.',
       obj({ dir: str('Project folder path'), app: str('Desired app name') }, ['dir']), (a) => ops.analyzeText(ctx, a.dir, a.app)),
     read('app_status', 'Status, plan, current release, env var names and live probe of an app.', obj({ app: appParam }, ['app']), (a) => ops.appStatus(ctx, a.app)),
@@ -205,7 +206,7 @@ export function buildTools(ctx: OpsContext): AgentTool[] {
     read('audit_log', 'Latest actions with approvals.', obj({ limit: { type: 'number' } }), async (a) => ops.auditText(ctx, a.limit ?? 20)),
 
     change('launch_app', 'Create an app on a plan and deploy a folder for the first time. Pass the env var NAMES the code needs (from analyze_project) in `keys`; the user types the values on the approval card before the deploy.',
-      obj({ app: appParam, dir: str('Project folder'), planID: str('Plan id from analyze_project'), keys: { type: 'array', items: { type: 'string' } } }, ['app', 'dir', 'planID'])),
+      obj({ app: appParam, dir: str('Project folder'), planID: str('Plan id from analyze_project or list_plans'), bundlePlanID: str('Feature plan for a g2 plan (from list_plans); omit for the cheapest with rollback'), keys: { type: 'array', items: { type: 'string' } } }, ['app', 'dir', 'planID'])),
     change('deploy', 'Deploy a new version of a folder to an existing app.', obj({ app: appParam, dir: str('Project folder'), port: { type: 'number' } }, ['app', 'dir'])),
     change('set_env', 'Set environment variables. Pass only key NAMES in `keys`; the user types the values in the dashboard. Use `variables` only for clearly non-secret values.',
       obj({ app: appParam, keys: { type: 'array', items: { type: 'string' } }, variables: { type: 'array', items: obj({ key: { type: 'string' }, value: { type: 'string' } }, ['key', 'value']) } }, ['app'])),
