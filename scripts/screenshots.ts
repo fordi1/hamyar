@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const BASE = process.argv[2] ?? 'http://localhost:3000';
-const OUT = resolve('docs/screenshots');
+const OUT = resolve(process.env.HAMYAR_SCREENSHOT_OUT || 'docs/screenshots');
 const BROWSERS = [
   ...(process.env.HAMYAR_BROWSER ? [process.env.HAMYAR_BROWSER] : []),
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -89,12 +89,18 @@ const SHOTS: Shot[] = [
   { name: '09-incident-sample', hash: '#/', setup: `${SAMPLE} location.hash = '#/incidents/SAMPLE01';`, wait: 2500 },
   { name: '10-domain-sample', hash: '#/', setup: `${SAMPLE} location.hash = '#/domains/sample-shop/shop.ir';`, wait: 2500 },
   { name: '11-approvals', hash: '#/approvals' },
-];
+  { name: '12-settings', hash: '#/settings' },
+].filter((shot) => !process.env.HAMYAR_SHOT || shot.name.includes(process.env.HAMYAR_SHOT));
 
-const VIEWPORTS = [
+const DEFAULT_VIEWPORTS = [
   { label: 'desktop', width: 1440, height: 900, scale: 1, mobile: false },
   { label: 'mobile', width: 375, height: 812, scale: 2, mobile: true },
 ];
+const VIEWPORTS = process.env.HAMYAR_VIEWPORTS
+  ? process.env.HAMYAR_VIEWPORTS.split(',').map((value) => Number(value.trim())).filter((width) => Number.isFinite(width) && width >= 280).map((width) => ({
+      label: `${width}px`, width, height: width < 768 ? 812 : 900, scale: 1, mobile: width < 768,
+    }))
+  : DEFAULT_VIEWPORTS;
 
 // ---------- DevTools protocol ----------
 
@@ -159,7 +165,9 @@ async function main() {
         if (shot.setup) await run(shot.setup);
         await sleep(shot.wait ?? 1200);
         // publishable: no real name on the image
-        await run("const n = document.querySelector('#account-name'); if (n) n.textContent = 'حساب نمونه'; const a = document.querySelector('#account-avatar'); if (a) a.textContent = 'ح'; window.scrollTo(0, 0);");
+        await run("const n = document.querySelector('#account-name'); if (n) n.textContent = 'حساب نمونه'; const a = document.querySelector('#account-avatar'); if (a) a.textContent = 'ح'; const accountRow = [...document.querySelectorAll('.settings-row')].find((row) => row.querySelector('dt')?.textContent?.trim() === 'حساب لیارا'); if (accountRow) accountRow.querySelector('dd')?.replaceChildren(document.createTextNode('حساب نمونه')); window.scrollTo(0, 0);");
+        const layout = await run('return { viewport: window.innerWidth, content: document.documentElement.scrollWidth };');
+        if (layout.content > layout.viewport) throw new Error(`${shot.name} overflows at ${vp.width}px (${layout.content}px content)`);
         const height = Math.min(2600, Math.max(vp.height, await run('return document.documentElement.scrollHeight;')));
         await send('Emulation.setDeviceMetricsOverride', { width: vp.width, height, deviceScaleFactor: vp.scale, mobile: vp.mobile });
         await sleep(400);

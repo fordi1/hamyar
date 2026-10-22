@@ -46,6 +46,7 @@ export class ApprovalError extends Error {
 
 const ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SECRET_KEYS = /value|password|secret|token|url$/i;
+export const APPROVAL_TTL_MS = 10 * 60_000;
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -74,7 +75,7 @@ export class ApprovalStore {
   constructor(opts: { path: string; now?: () => number; ttlMs?: number }) {
     this.path = opts.path;
     this.now = opts.now ?? Date.now;
-    this.ttlMs = opts.ttlMs ?? 10 * 60_000;
+    this.ttlMs = opts.ttlMs ?? APPROVAL_TTL_MS;
   }
 
   private read(): ApprovalRecord[] {

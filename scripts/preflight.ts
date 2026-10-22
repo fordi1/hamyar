@@ -1,5 +1,5 @@
 // Pre-recording checklist: is everything ready for the demo? Read-only, except one
-// tiny Liara AI completion to prove the model answers.
+// tiny model tool call to prove the configured coding agent can use Hamyar tools.
 // Usage: npm run preflight -- [app]
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
@@ -39,9 +39,13 @@ await check('Account balance', async () => {
 
 await check('AI model answers', async () => {
   const llm = llmFromEnv();
-  if (!llm) return [false, 'set LIARA_AI_API_KEY + LIARA_AI_BASE_URL, LIARA_AI_WORKSPACE_ID, or AI_API_KEY + AI_BASE_URL'];
-  const reply = await llm.chat([{ role: 'user', content: 'Reply with the single word: ok' }], []);
-  return [true, `${llm.provider} · ${llm.model} said "${String(reply.content ?? '').trim().slice(0, 20)}"`];
+  if (!llm) return [false, 'set Liara AI, CodeCraft API, or another OpenAI-compatible provider'];
+  const reply = await llm.chat(
+    [{ role: 'user', content: 'Call hamyar_connection_check exactly once.' }],
+    [{ name: 'hamyar_connection_check', description: 'Confirms that tool calling works.', parameters: { type: 'object', properties: {}, additionalProperties: false } }],
+  );
+  const called = reply.tool_calls?.[0]?.function.name;
+  return [called === 'hamyar_connection_check', `${llm.provider} · ${llm.model}${called ? ` called ${called}` : ' did not call the tool'}`];
 });
 
 await check(`App ${app} exists`, async () => {

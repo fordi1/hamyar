@@ -59,6 +59,8 @@ Fill `.env` (never commit it):
 | `LIARA_API_TOKEN` | Liara console → **API** → create key |
 | `LIARA_AI_API_KEY` + `LIARA_AI_BASE_URL` | Liara AI key and `https://ai.liara.ir/api/<workspaceID>/v1` — or only `LIARA_AI_WORKSPACE_ID`, and the console token is used |
 | `LIARA_AI_MODEL` | e.g. `openai/gpt-4.1` |
+| `CODECRAFT_API_KEY` | CodeCraft API key; the base URL defaults to `https://codecraftapi.com/v1` |
+| `CODECRAFT_MODEL` | a tool-capable model such as `gpt-5.6-sol` (`CODECRAFT_REASONING_EFFORT=none`) |
 | `AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL` | any OpenAI-compatible provider when Liara AI is not set, e.g. `https://ai.boxapi.ir/ai/v1` with `openai/gpt-6-sol` (also set `AI_REASONING_EFFORT=none` for that model) |
 | `HAMYAR_MODE` | `observe`, `review` (default) or `auto-safe` |
 | `HAMYAR_DASHBOARD_PASSWORD` | required when the dashboard runs on a server |
@@ -106,6 +108,7 @@ To run it on Liara, deploy this folder as a `node` app with `HAMYAR_DASHBOARD_PA
 | Monitoring | ![](docs/screenshots/07-monitoring-sample-desktop.png) | ![](docs/screenshots/07-monitoring-sample-mobile.png) |
 | Incident workspace | ![](docs/screenshots/09-incident-sample-desktop.png) | ![](docs/screenshots/09-incident-sample-mobile.png) |
 | Domain assistant | ![](docs/screenshots/10-domain-sample-desktop.png) | ![](docs/screenshots/10-domain-sample-mobile.png) |
+| Settings and safety limits | ![](docs/screenshots/12-settings-desktop.png) | ![](docs/screenshots/12-settings-mobile.png) |
 
 Screenshots marked *sample* render pages that need a live app (charts, incidents, DNS steps) from
 sample responses injected in the browser, because the test account has no app yet; all others show
@@ -225,7 +228,8 @@ Platform detection, default ports, ignore rules and the release body are ported 
   (`POST /v2/projects/{name}/releases/{id}/rollback`), build logs, DNS record `contents` format.
 - Liara AI's free `base` workspace is documented but rejected by the API (`plan must be one of
   [standard, pro]`, checked 2026-10-21), so Liara AI needs a charged account. Hamyar therefore
-  accepts any OpenAI-compatible provider; the demo runs on boxapi.ir (`openai/gpt-6-sol`). Quick
+  accepts CodeCraft API and any OpenAI-compatible provider; CodeCraft is configured with a
+  tool-capable model (`gpt-5.6-sol`). Quick
   actions (diagnose, status, logs) and all dashboard pages work without any AI.
 - Deploy from GitHub supports public repositories only; for a private one, upload a ZIP.
 - Liara does not expose request counts or status codes, so the monitoring page does not show them;
@@ -240,7 +244,7 @@ Platform detection, default ports, ignore rules and the release body are ported 
 
 | Check | Result |
 |---|---|
-| Unit tests (`npm test`) | 238 passing: detection, env scan, plan advisor, packing, deploy state machine and verification, detectors, RCA board, verify, postmortem, approvals, policy, actions (launch, rollback), operations, deploy sources (ZIP safety, GitHub), wizard, monitoring, incidents, domain assistant, dashboard security and client checks, agent loop, redaction, domains |
+| Unit tests (`npm test`) | 263 passing: detection, env scan, plan advisor, packing, deploy state machine and verification, detectors, RCA board, verify, postmortem, approvals, policy, actions (launch, rollback), operations, deploy sources (ZIP safety, GitHub), wizard, monitoring, incidents, domain assistant, dashboard security and client checks, agent loop, provider limits, redaction, domains |
 | Real Liara API (read-only) | `/v1/me` (42 plans), `/v1/billing`, `/v1/projects`, Liara DNS zones, Liara AI workspaces |
 | MCP end to end (`npm run mcp-smoke`) | request filed → callback before approval not executed → approved with different args blocked → executed → reuse blocked → elicitation "no" audited with reason → elicitation "yes" executed |
 | Dashboard | every page checked in a browser at 1440, 900 and 375 px (no horizontal overflow, no wrapped buttons, 44 px controls); screenshots in `docs/screenshots/` |

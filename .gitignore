@@ -8,3 +8,6 @@ audit.jsonl
 dist/
 .impeccable/review/
 .hamyar/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

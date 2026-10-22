@@ -4,12 +4,19 @@
 // the dashboard and the terminal approve the same requests.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ApprovalStore, maskSecrets } from './approvals.js';
+import { APPROVAL_TTL_MS, ApprovalStore, maskSecrets } from './approvals.js';
 import { OperationStore } from './operations.js';
 import { IncidentStore } from './incidents.js';
 
 export type Tier = 'T0' | 'T1' | 'T2' | 'T3';
 export type Mode = 'observe' | 'review' | 'auto-safe';
+
+export const SAFETY_LIMITS = {
+  approvalTtlMs: APPROVAL_TTL_MS,
+  deploy: { count: 3, windowMs: 10 * 60_000 },
+  restart: { count: 1, windowMs: 5 * 60_000 },
+  allChanges: { count: 10, windowMs: 60 * 60_000 },
+} as const;
 
 export class PolicyError extends Error {
   constructor(public explanation: string) {
@@ -80,13 +87,13 @@ export class Policy {
     const executed = this.recent(500).filter((e) => e.outcome === 'executed');
     const count = (pred: (e: AuditEntry) => boolean, windowMs: number) => executed.filter((e) => now - Date.parse(e.at) < windowMs && pred(e)).length;
 
-    if (['deploy', 'launch_app'].includes(tool) && count((e) => ['deploy', 'launch_app'].includes(e.tool), 10 * 60_000) >= 3) {
+    if (['deploy', 'launch_app'].includes(tool) && count((e) => ['deploy', 'launch_app'].includes(e.tool), SAFETY_LIMITS.deploy.windowMs) >= SAFETY_LIMITS.deploy.count) {
       throw new PolicyError('در ۱۰ دقیقه‌ی اخیر ۳ دیپلوی انجام شده؛ برای جلوگیری از اشتباه زنجیره‌ای، کمی صبر کنید.');
     }
-    if (tool === 'restart_app' && count((e) => e.tool === 'restart_app' && e.args?.app === app, 5 * 60_000) >= 1) {
+    if (tool === 'restart_app' && count((e) => e.tool === 'restart_app' && e.args?.app === app, SAFETY_LIMITS.restart.windowMs) >= SAFETY_LIMITS.restart.count) {
       throw new PolicyError('این برنامه در ۵ دقیقه‌ی اخیر ری‌استارت شده؛ ری‌استارت پشت‌سرهم مشکل را حل نمی‌کند.');
     }
-    if (count(() => true, 60 * 60_000) >= 10) {
+    if (count(() => true, SAFETY_LIMITS.allChanges.windowMs) >= SAFETY_LIMITS.allChanges.count) {
       throw new PolicyError('در یک ساعت اخیر ۱۰ تغییر انجام شده؛ سقف ایمنی پر شده است.');
     }
   }

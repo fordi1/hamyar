@@ -33,24 +33,68 @@ export interface LLM {
   chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<{ content?: string | null; tool_calls?: ToolCall[] }>;
 }
 
+export class AIProviderError extends Error {
+  constructor(
+    public explanation: string,
+    public status?: number,
+    public retryAfterSeconds?: number,
+  ) {
+    super(explanation);
+  }
+}
+
+function retryAfterSeconds(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(1, Math.ceil((date - Date.now()) / 1000)) : undefined;
+}
+
+function providerError(provider: string, status: number, retryAfter?: number): AIProviderError {
+  if (status === 401 || status === 403) {
+    return new AIProviderError(`اتصال به ${provider} رد شد. کلید API و دسترسی آن را در تنظیمات بررسی کنید.`, status);
+  }
+  if (status === 404) {
+    return new AIProviderError(`مدل انتخاب‌شده در ${provider} در دسترس نیست. نام مدل را در تنظیمات بررسی کنید.`, status);
+  }
+  if (status === 429) {
+    const wait = retryAfter ? ` حدود ${retryAfter.toLocaleString('fa-IR')} ثانیه` : ' کمی';
+    return new AIProviderError(`سقف درخواست‌های ${provider} پر شده است.${wait} صبر کنید و دوباره تلاش کنید.`, status, retryAfter);
+  }
+  if (status >= 500) return new AIProviderError(`${provider} موقتاً پاسخ نمی‌دهد. چند دقیقه‌ی دیگر دوباره تلاش کنید.`, status);
+  return new AIProviderError(`درخواست هوش مصنوعی در ${provider} انجام نشد. تنظیمات مدل را بررسی کنید.`, status);
+}
+
 export function openAICompatibleLLM(opts: { url: string; apiKey: string; model: string; timeoutMs?: number; provider?: string; reasoningEffort?: string }): LLM {
   return {
     async chat(messages, tools) {
-      const res = await fetch(opts.url, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${opts.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: opts.model,
-          messages,
-          ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: t })), tool_choice: 'auto' } : {}),
-          // some reasoning models reject tool calls on chat/completions unless reasoning is off
-          ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : { temperature: 0.2 }),
-        }),
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
-      });
+      const provider = opts.provider ?? 'سرویس هوش مصنوعی';
+      let res: Response;
+      try {
+        res = await fetch(opts.url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${opts.apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: opts.model,
+            messages,
+            ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: t })), tool_choice: 'auto' } : {}),
+            // some reasoning models reject tool calls on chat/completions unless reasoning is off
+            ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : { temperature: 0.2 }),
+          }),
+          signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
+        });
+      } catch (err: any) {
+        if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+          throw new AIProviderError(`پاسخ ${provider} بیش از حد طول کشید. دوباره تلاش کنید.`);
+        }
+        throw new AIProviderError(`ارتباط با ${provider} برقرار نشد. اینترنت و آدرس API را بررسی کنید.`);
+      }
       const body: any = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(`${opts.provider ?? 'AI'} ${res.status}: ${body?.error?.message ?? body?.message ?? JSON.stringify(body).slice(0, 200)}`);
-      return body.choices?.[0]?.message ?? { content: '' };
+      if (!res.ok) throw providerError(provider, res.status, retryAfterSeconds(res.headers.get('retry-after')));
+      const message = body.choices?.[0]?.message;
+      if (!message) throw new AIProviderError(`${provider} پاسخ قابل‌استفاده‌ای برنگرداند. دوباره تلاش کنید.`);
+      return message;
     },
   };
 }
@@ -58,10 +102,11 @@ export function openAICompatibleLLM(opts: { url: string; apiKey: string; model: 
 // Model provider from env, first match wins:
 // 1. Liara AI with an API key: LIARA_AI_API_KEY + LIARA_AI_BASE_URL
 // 2. Liara AI with the console token: LIARA_AI_WORKSPACE_ID (+ LIARA_API_TOKEN)
-// 3. any OpenAI-compatible provider: AI_API_KEY + AI_BASE_URL (e.g. https://ai.boxapi.ir/ai/v1)
+// 3. CodeCraft API: CODECRAFT_API_KEY (+ optional base/model overrides)
+// 4. any OpenAI-compatible provider: AI_API_KEY + AI_BASE_URL (e.g. https://ai.boxapi.ir/ai/v1)
 export function llmFromEnv(env: NodeJS.ProcessEnv = process.env): (LLM & { provider: string; model: string }) | undefined {
-  const pick = (provider: string, base: string, apiKey: string, model: string) => ({
-    ...openAICompatibleLLM({ url: `${base.replace(/\/$/, '')}/chat/completions`, apiKey, model, provider, reasoningEffort: env.AI_REASONING_EFFORT || undefined }),
+  const pick = (provider: string, base: string, apiKey: string, model: string, reasoningEffort = env.AI_REASONING_EFFORT) => ({
+    ...openAICompatibleLLM({ url: `${base.replace(/\/$/, '')}/chat/completions`, apiKey, model, provider, reasoningEffort: reasoningEffort || undefined }),
     provider,
     model,
   });
@@ -69,7 +114,16 @@ export function llmFromEnv(env: NodeJS.ProcessEnv = process.env): (LLM & { provi
   if (env.LIARA_AI_WORKSPACE_ID && env.LIARA_API_TOKEN) {
     return pick('Liara AI', `https://ai.liara.ir/api/v1/${env.LIARA_AI_WORKSPACE_ID}/playground`, env.LIARA_API_TOKEN, env.LIARA_AI_MODEL || 'openai/gpt-4.1');
   }
-  if (env.AI_API_KEY && env.AI_BASE_URL) return pick(new URL(env.AI_BASE_URL).hostname, env.AI_BASE_URL, env.AI_API_KEY, env.AI_MODEL || 'anthropic/claude-sonnet-5.5');
+  if (env.CODECRAFT_API_KEY) {
+    return pick('CodeCraft API', env.CODECRAFT_BASE_URL || 'https://codecraftapi.com/v1', env.CODECRAFT_API_KEY, env.CODECRAFT_MODEL || 'gpt-5.6-sol', env.CODECRAFT_REASONING_EFFORT || 'none');
+  }
+  if (env.AI_API_KEY && env.AI_BASE_URL) {
+    let provider = 'OpenAI-compatible API';
+    try {
+      provider = new URL(env.AI_BASE_URL).hostname;
+    } catch {}
+    return pick(provider, env.AI_BASE_URL, env.AI_API_KEY, env.AI_MODEL || 'anthropic/claude-sonnet-5.5');
+  }
   return undefined;
 }
 

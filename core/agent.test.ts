@@ -1,8 +1,8 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { runAgent, buildTools, type LLM, type ChatMessage, type AgentEvent, type ApprovalRequest } from './agent.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runAgent, buildTools, llmFromEnv, openAICompatibleLLM, type LLM, type ChatMessage, type AgentEvent, type ApprovalRequest } from './agent.js';
 import { Policy } from './policy.js';
 import type { OpsContext } from './ops.js';
 
@@ -130,5 +130,50 @@ describe('runAgent', () => {
     const { llm, seen } = scriptedLLM([call('delete_app', { app: 'shop' }), { content: 'نمی‌شود.' }]);
     await runAgent({ llm, tools: buildTools(ctx), history: [], userMessage: 'حذفش کن', hooks: hooks(() => ({ approved: true })).hooks });
     expect(seen[1].at(-1)?.content).toMatch(/وجود ندارد|حذف/);
+  });
+});
+
+describe('AI provider configuration', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('uses the dedicated CodeCraft settings before a generic provider', () => {
+    const llm = llmFromEnv({
+      CODECRAFT_API_KEY: 'cc_test',
+      CODECRAFT_MODEL: 'gpt-5.6-sol',
+      AI_API_KEY: 'generic',
+      AI_BASE_URL: 'https://example.test/v1',
+    } as NodeJS.ProcessEnv);
+
+    expect(llm).toMatchObject({ provider: 'CodeCraft API', model: 'gpt-5.6-sol' });
+  });
+
+  it('turns provider rate limits into a short Persian recovery message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { message: 'raw provider detail' } }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '12' },
+    })));
+    const llm = openAICompatibleLLM({ url: 'https://codecraftapi.com/v1/chat/completions', apiKey: 'cc_test', model: 'gpt-5.6-sol', provider: 'CodeCraft API' });
+
+    await expect(llm.chat([{ role: 'user', content: 'سلام' }], [])).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 12,
+      explanation: expect.stringMatching(/سقف درخواست.*۱۲ ثانیه/),
+    });
+  });
+
+  it('sends tool definitions to the CodeCraft-compatible endpoint', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', tool_calls: [] } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const llm = llmFromEnv({ CODECRAFT_API_KEY: 'cc_test', CODECRAFT_REASONING_EFFORT: 'none' } as NodeJS.ProcessEnv)!;
+    await llm.chat([{ role: 'user', content: 'وضعیت را بررسی کن' }], [{ name: 'status', description: 'read status', parameters: { type: 'object' } }]);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://codecraftapi.com/v1/chat/completions', expect.objectContaining({ method: 'POST' }));
+    const callArgs = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const request = JSON.parse(String(callArgs[1].body));
+    expect(request).toMatchObject({ model: 'gpt-5.6-sol', tool_choice: 'auto', reasoning_effort: 'none' });
+    expect(request.tools[0].function.name).toBe('status');
   });
 });

@@ -417,11 +417,20 @@ input::placeholder { color: var(--text-3); }
 .timeline .when { color: var(--text-3); white-space: nowrap; font-size: 12px; }
 .timeline .who { color: var(--text-3); font-size: 12px; display: block; }
 
-.settings-list { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 10px 16px; margin: 0; }
+.settings-list { margin: 0; }
+.settings-row { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 16px; padding-block: 10px; border-block-end: 1px solid var(--border); }
+.settings-row:first-child { padding-block-start: 0; }
+.settings-row:last-child { padding-block-end: 0; border-block-end: 0; }
 .settings-list dt { color: var(--text-3); }
 .settings-list dd { margin: 0; }
 .settings-list dd small { display: block; color: var(--text-3); }
+.provider-name { display: inline-block; margin-inline-start: 8px; unicode-bidi: isolate; }
 .limits { margin: 0; padding-inline-start: 18px; color: var(--text-2); font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; }
+
+@media (max-width: 767px) {
+  .settings-row { grid-template-columns: minmax(0, 1fr); gap: 4px; padding-block: 12px; }
+  .provider-name { display: block; margin-block-start: 6px; margin-inline-start: 0; }
+}
 
 /* ---------- toast, login ---------- */
 .toast {

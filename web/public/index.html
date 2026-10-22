@@ -166,11 +166,11 @@
           <div id="incidents-view" class="stack"></div>
         </section>
 
-        <!-- E. Approvals inbox: requests from this dashboard and from Claude Code (MCP) -->
+        <!-- E. Approvals inbox: requests from this dashboard and from coding agents over MCP -->
         <section class="page" data-page="approvals" aria-labelledby="approvals-title" hidden>
           <div class="page-head">
             <h1 id="approvals-title">تأییدها</h1>
-            <p>هیچ تغییری روی لیارا بدون تأیید شما اجرا نمی‌شود. درخواست‌های Claude Code هم اینجا می‌آیند.</p>
+            <p>هیچ تغییری روی لیارا بدون تأیید شما اجرا نمی‌شود. درخواست‌های عامل کدنویسی هم اینجا می‌آیند.</p>
           </div>
           <div class="stack" id="approvals-list"></div>
           <p class="empty" id="approvals-empty"><svg class="ico"><use href="#i-check"/></svg>درخواستی منتظر تأیید نیست.</p>
@@ -182,8 +182,12 @@
 
         <!-- Settings: real configuration, read-only, plus logout and the kill switch -->
         <section class="page" data-page="settings" aria-labelledby="settings-title" hidden>
-          <div class="page-head"><h1 id="settings-title">تنظیمات</h1><p>تنظیمات از فایل ‎.env‎ خوانده می‌شوند؛ این صفحه فقط نشانشان می‌دهد.</p></div>
+          <div class="page-head"><h1 id="settings-title">تنظیمات و ایمنی</h1><p>وضعیت اتصال‌ها و مرز اختیارات همیار را اینجا می‌بینید.</p></div>
           <dl class="card settings-list" id="settings-list"></dl>
+          <section class="card">
+            <h2>محدودیت‌های ایمنی و API</h2>
+            <ul class="limits" id="safety-limits"><li class="muted">در حال خواندن تنظیمات…</li></ul>
+          </section>
           <section class="card">
             <h2>توقف اضطراری</h2>
             <p class="muted">همه‌ی درخواست‌های در انتظار و تأییدهای استفاده‌نشده باطل می‌شوند. عملیاتی که روی لیارا شروع شده متوقف نمی‌شود.</p>
@@ -194,8 +198,9 @@
             <ul class="limits">
               <li>هرگز برنامه، دیسک، دیتابیس یا دامنه را حذف نمی‌کند.</li>
               <li>شارژ حساب و ثبت رکورد در پنل دامنه (مثل ایرنیک) با شماست؛ همیار دقیقاً می‌گوید چه وارد کنید و بعد بررسی می‌کند.</li>
-              <li>پایش فقط وقتی این صفحه باز است کار می‌کند.</li>
+              <li>پایش خودکار هر ۳۰ ثانیه و فقط تا وقتی داشبورد باز است کار می‌کند.</li>
               <li>علت‌های داخل کد از روی لاگ و متریک تشخیص داده می‌شوند؛ هر ادعا شماره‌ی مدرک دارد.</li>
+              <li>لیارا تعداد درخواست‌ها و کدهای وضعیت HTTP را در API نمی‌دهد؛ همیار برای این بخش عدد ساختگی نشان نمی‌دهد.</li>
             </ul>
           </section>
           <button class="btn" id="logout-btn" type="button" hidden><svg class="ico"><use href="#i-logout"/></svg>خروج</button>

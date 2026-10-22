@@ -661,10 +661,17 @@ function renderSettings() {
   if (!c) return;
   const [label, hint] = MODES[c.mode] || [c.mode, ''];
   $('#settings-list').innerHTML = `
-    <dt>حالت کار</dt><dd>${esc(label)}<small>${esc(hint)} · با HAMYAR_MODE عوض می‌شود</small></dd>
-    <dt>هوش مصنوعی</dt><dd>${c.ai ? `${esc(c.provider)} · <code>${esc(c.model)}</code>` : 'وصل نیست'}<small>${c.ai ? 'گفت‌وگو فعال است' : 'دکمه‌های بررسی سریع بدون هوش مصنوعی هم کار می‌کنند'}</small></dd>
-    <dt>ورود</dt><dd>${c.auth ? 'با رمز' : 'فقط روی همین کامپیوتر'}<small>${c.auth ? 'نشست بعد از یک ساعت بی‌کاری تمام می‌شود' : 'بدون رمز، داشبورد فقط از 127.0.0.1 باز می‌شود'}</small></dd>
-    <dt>حساب لیارا</dt><dd>${esc(state.me?.name || '—')}<small>${esc(state.me?.email || '')}</small></dd>`;
+    <div class="settings-row"><dt>حالت کار</dt><dd>${esc(label)}<small>${esc(hint)} · با HAMYAR_MODE عوض می‌شود</small></dd></div>
+    <div class="settings-row"><dt>عامل هوشمند</dt><dd>${c.ai ? `<span class="pill" data-state="ok"><span class="dot"></span>تنظیم شده</span><span class="provider-name">${esc(c.provider)} · <code><bdi>${esc(c.model)}</bdi></code></span>` : '<span class="pill" data-state="off"><span class="dot"></span>وصل نیست</span>'}<small>${c.ai ? 'گفت‌وگو و ابزارها فعال‌اند؛ هیچ تغییری بدون اجازه‌ی شما اجرا نمی‌شود' : 'بررسی‌های سریع همچنان کار می‌کنند، اما گفت‌وگوی هوشمند خاموش است'}</small></dd></div>
+    <div class="settings-row"><dt>ورود</dt><dd>${c.auth ? 'با رمز' : 'فقط روی همین کامپیوتر'}<small>${c.auth ? 'نشست بعد از یک ساعت بی‌کاری تمام می‌شود' : 'بدون رمز، داشبورد فقط از 127.0.0.1 باز می‌شود'}</small></dd></div>
+    <div class="settings-row"><dt>حساب لیارا</dt><dd>${esc(state.me?.name || '—')}<small><bdi>${esc(state.me?.email || '')}</bdi></small></dd></div>`;
+  const l = c.limits;
+  $('#safety-limits').innerHTML = l ? `
+    <li>هر درخواست تأیید تا ${fa(l.approvalMinutes)} دقیقه معتبر است و فقط یک بار استفاده می‌شود.</li>
+    <li>حداکثر ${fa(l.deployCount)} دیپلوی در ${fa(l.deployMinutes)} دقیقه انجام می‌شود.</li>
+    <li>هر برنامه حداکثر یک بار در ${fa(l.restartMinutes)} دقیقه ری‌استارت می‌شود.</li>
+    <li>سقف کلی تغییرها ${fa(l.changesPerHour)} مورد در ساعت است.</li>
+    <li>اگر سرویس هوش مصنوعی یا لیارا محدودیت نرخ بدهد، همیار زمان انتظار را کوتاه و روشن اعلام می‌کند.</li>` : '';
   $('#logout-btn').hidden = !c.auth;
 }
 

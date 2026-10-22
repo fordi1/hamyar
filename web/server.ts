@@ -13,7 +13,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { basename, dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LiaraClient } from '../core/liara-client.js';
-import { Policy } from '../core/policy.js';
+import { Policy, SAFETY_LIMITS } from '../core/policy.js';
 import * as ops from '../core/ops.js';
 import type { OpsContext } from '../core/ops.js';
 import { buildTools, llmFromEnv, runAgent, type ApprovalDecision, type ChatMessage } from '../core/agent.js';
@@ -401,7 +401,21 @@ const server = createServer(async (req, res) => {
 
     switch (`${req.method} ${url.pathname}`) {
       case 'GET /api/config':
-        return json(res, 200, { mode: ctx.policy.mode, ai: Boolean(llm), provider: llm?.provider, model: llm?.model, auth: Boolean(PASSWORD), local: !PASSWORD });
+        return json(res, 200, {
+          mode: ctx.policy.mode,
+          ai: Boolean(llm),
+          provider: llm?.provider,
+          model: llm?.model,
+          auth: Boolean(PASSWORD),
+          local: !PASSWORD,
+          limits: {
+            approvalMinutes: SAFETY_LIMITS.approvalTtlMs / 60_000,
+            deployCount: SAFETY_LIMITS.deploy.count,
+            deployMinutes: SAFETY_LIMITS.deploy.windowMs / 60_000,
+            restartMinutes: SAFETY_LIMITS.restart.windowMs / 60_000,
+            changesPerHour: SAFETY_LIMITS.allChanges.count,
+          },
+        });
       case 'GET /api/me': {
         // only what the top bar shows; never national code, phone or tokens
         const [me, balance] = await Promise.all([ctx.client.me(), ctx.client.balance()]);
