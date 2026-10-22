@@ -47,8 +47,11 @@ const failView = (err, retry) => `<p class="form-error" role="alert">${icon('ale
 async function renderAppList() {
   const el = appsView();
   el.innerHTML = `<div class="page-head row"><div><h1>سرویس‌ها</h1><p>برنامه‌های شما روی لیارا</p></div><a class="btn primary" href="#/deploy">${icon('rocket')}دیپلوی جدید</a></div>${loadingView()}`;
+  const slot = el.querySelector('.skeleton');
   try {
     const { apps } = await getJson('/api/apps');
+    // the page was redrawn meanwhile (another click): this result is stale
+    if (!slot.isConnected) return;
     const list = apps.length
       ? `<div class="app-list">${apps
           .map((a) => {
@@ -61,10 +64,10 @@ async function renderAppList() {
           })
           .join('')}</div><p class="note-sm">«روشن/خاموش» وضعیت لیاراست؛ سلامت واقعی هر برنامه در صفحه‌ی خودش اندازه‌گیری می‌شود.</p>`
       : `<div class="card empty-card">${mascot('')}<b>هنوز برنامه‌ای روی لیارا ندارید</b><span class="muted">اولین پروژه‌تان را با چند کلیک بالا بیاورید.</span><a class="btn primary" href="#/deploy">${icon('rocket')}دیپلوی پروژه</a></div>`;
-    el.querySelector('.skeleton').outerHTML = list;
+    slot.outerHTML = list;
   } catch (err) {
-    if (err.message === 'login required') return;
-    el.querySelector('.skeleton').outerHTML = failView(err, true);
+    if (err.message === 'login required' || !slot.isConnected) return;
+    slot.outerHTML = failView(err, true);
     el.querySelector('[data-retry]').onclick = renderAppList;
   }
 }
@@ -132,8 +135,7 @@ async function loadHeader(app) {
 
 // ---------- actions: request → approval card → run → result ----------
 
-async function requestAction(tool, args) {
-  const box = $('#app-action-box');
+async function requestAction(tool, args, box = $('#app-action-box')) {
   box.innerHTML = `<div class="op-status"><span class="spin2"></span>در حال آماده‌سازی درخواست…</div>`;
   try {
     const res = await api('/api/action/request', { method: 'POST', body: { tool, args } });

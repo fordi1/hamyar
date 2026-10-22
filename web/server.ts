@@ -22,6 +22,7 @@ import { normalizeSeries } from '../core/sre/collect.js';
 import { resumeOperations } from '../core/operations.js';
 import { MAX_ARCHIVE_BYTES, SourceError, SourceStore, extractZip, fetchGithub, parseGithubUrl } from '../core/sources.js';
 import { WizardError, analyzeSource, cancelDeploy, requestDeploy, startDeploy } from '../core/wizard.js';
+import { renderIncidentReport, type AuditRow, type Incident } from '../core/incidents.js';
 import { RANGES, requestAppAction, runApprovedAppAction, shapeLogs, shapeMetrics, shapeReleases, validAppName, type LogLevel, type Range } from '../core/monitor.js';
 import { LoginLimiter, SECURITY_HEADERS, SessionStore, checkMutationRequest, passwordProblem } from './security.js';
 
@@ -230,6 +231,42 @@ async function appData(res: ServerResponse, app: string, kind: string, url: URL)
   json(res, 404, { error: 'not found' });
 }
 
+// ---------- incidents (screens D and G) ----------
+
+// approvals, rejections and executions for the app while the incident was open, from the audit log
+function incidentActions(inc: Incident): AuditRow[] {
+  const from = inc.openedAt - 60_000;
+  const to = inc.closedAt ?? Date.now();
+  return ctx.policy
+    .recent(500)
+    .filter((e) => e.args?.app === inc.app && e.outcome !== 'previewed')
+    .map((e) => ({ at: Date.parse(e.at), tool: e.tool, outcome: e.outcome, approvedBy: e.approvedBy, detail: e.detail }))
+    .filter((e) => e.at >= from && e.at <= to)
+    .sort((a, b) => a.at - b.at);
+}
+
+async function incidents(req: IncomingMessage, res: ServerResponse, url: URL) {
+  if (req.method === 'GET' && url.pathname === '/api/incidents') {
+    return json(res, 200, ctx.policy.incidents.list().map((i) => ({
+      id: i.id, app: i.app, title: i.title, status: i.status, severity: i.severity, openedAt: i.openedAt, closedAt: i.closedAt,
+      diagnoses: i.diagnoses, rootConfidence: i.root?.confidence, fix: i.fixes[0]?.title, verified: i.verifications.at(-1)?.passed,
+    })));
+  }
+  const m = url.pathname.match(/^\/api\/incidents\/([A-F0-9]{8})(\/close)?$/);
+  if (!m) return json(res, 404, { error: 'not found' });
+  if (req.method === 'POST' && m[2]) {
+    const { reason } = await body(req);
+    const closed = ctx.policy.incidents.close(m[1], String(reason ?? '').slice(0, 300));
+    if (!closed) return json(res, 409, { error: 'این حادثه باز نیست.' });
+    return json(res, 200, { ok: true });
+  }
+  if (req.method !== 'GET' || m[2]) return json(res, 404, { error: 'not found' });
+  const inc = ctx.policy.incidents.get(m[1]);
+  if (!inc) return json(res, 404, { error: 'این حادثه پیدا نشد.' });
+  const actions = incidentActions(inc);
+  return json(res, 200, { incident: inc, actions, report: renderIncidentReport(inc, actions) });
+}
+
 // ---------- deploy wizard: source intake, analysis, approval, run ----------
 
 const publicSource = (s: { id: string; origin: string; label: string }) => ({ id: s.id, origin: s.origin, label: s.label });
@@ -347,6 +384,7 @@ const server = createServer(async (req, res) => {
     const appRoute = req.method === 'GET' && url.pathname.match(/^\/api\/apps\/([^/]+)\/(metrics|logs|releases)$/);
     // awaited so a Liara error reaches the catch below instead of crashing the server
     if (appRoute) return await appData(res, decodeURIComponent(appRoute[1]), appRoute[2], url);
+    if (url.pathname === '/api/incidents' || url.pathname.startsWith('/api/incidents/')) return await incidents(req, res, url);
 
     switch (`${req.method} ${url.pathname}`) {
       case 'GET /api/config':

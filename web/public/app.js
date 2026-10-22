@@ -8,6 +8,13 @@ const fa = (n) => Number(n).toLocaleString('fa-IR');
 const pct = (r) => `${fa(Math.round(r * 100))}٪`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const icon = (name, cls = '') => `<svg class="ico ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+// Escapes text and isolates Latin runs (paths, env names, file:line) so "/products" stays
+// "/products" inside a Persian sentence.
+const bidi = (text) =>
+  String(text ?? '')
+    .split(/(\/?[A-Za-z0-9_.:/-]*[A-Za-z][A-Za-z0-9_.:/-]*(?: +[A-Za-z0-9_.:/-]*[A-Za-z][A-Za-z0-9_.:/-]*)*)/)
+    .map((part, i) => (i % 2 ? `<bdi>${esc(part)}</bdi>` : esc(part)))
+    .join('');
 const mascot = (cls = 'sm') => `<svg class="mascot ${cls}" aria-hidden="true"><use href="#mascot"/></svg>`;
 
 // The CSP forbids inline style attributes; bar widths travel as data-pct (0..1) and are
@@ -267,8 +274,8 @@ const rawView = (output) => (output ? `<details class="rejected"><summary>${icon
 
 function evidenceList(h) {
   const rows = [
-    ...h.supporting.map((e) => `<li><span class="eid">${esc(e.id)}</span><span>${esc(e.summary)}</span></li>`),
-    ...h.contradicting.map((e) => `<li><span class="eid against">${esc(e.id)}</span><span>${esc(e.summary)}</span></li>`),
+    ...h.supporting.map((e) => `<li><span class="eid">${esc(e.id)}</span><span>${bidi(e.summary)}</span></li>`),
+    ...h.contradicting.map((e) => `<li><span class="eid against">${esc(e.id)}</span><span>${bidi(e.summary)}</span></li>`),
   ];
   return `<ul class="evidence">${rows.join('')}</ul>`;
 }
@@ -283,7 +290,7 @@ function boardView(b) {
   if (b.root) {
     const c = Math.round(b.root.confidence * 100);
     out.push(`<div class="root">
-      <div class="root-title"><b>${esc(b.root.title)}</b><span>اطمینان ${fa(c)}٪</span></div>
+      <div class="root-title"><b>${bidi(b.root.title)}</b><span>اطمینان ${fa(c)}٪</span></div>
       <div class="conf" role="meter" aria-valuenow="${c}" aria-valuemin="0" aria-valuemax="100" aria-label="اطمینان"><span data-w="${c / 100}"></span></div>
       ${evidenceList(b.root)}
       ${b.codeHint ? `<span class="code-loc">${icon('code')}محل در کد: <span class="code-chip">${esc(b.codeHint.file)}:${esc(b.codeHint.line)}</span></span>` : ''}
@@ -302,6 +309,7 @@ function boardView(b) {
       <div class="mini">${ruled.map((h) => `<div class="mini-row"><b>${esc(h.title)}</b></div>${evidenceList(h)}`).join('')}</div></details>`);
   }
   if (b.gaps?.length) out.push(`<p class="note">داده‌ای که در دسترس نبود: ${esc(b.gaps.join('؛ '))}</p>`);
+  if (b.incidentId) out.push(`<a class="btn small" href="#/incidents/${esc(b.incidentId)}">${icon('bug')}صفحه‌ی حادثه‌ی ${esc(b.incidentId)}</a>`);
   return `<div class="board">${out.join('')}</div>`;
 }
 
@@ -605,7 +613,7 @@ $('#login-form').onsubmit = async (e) => {
 
 // ---------- routes and the status sheet ----------
 
-const ROUTES = ['home', 'deploy', 'apps', 'approvals', 'settings'];
+const ROUTES = ['home', 'deploy', 'apps', 'incidents', 'approvals', 'settings'];
 
 function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
@@ -626,6 +634,7 @@ function route() {
   if (page === 'settings') renderSettings();
   if (page === 'deploy') window.renderWizard?.();
   if (page === 'apps') window.renderApps?.(parts[1], parts[2]);
+  if (page === 'incidents') window.renderIncidents?.(parts[1]);
   // move focus for keyboard and screen-reader users, except on first load
   if (state.routed) $('#view').focus({ preventScroll: true });
   state.routed = true;
@@ -662,7 +671,6 @@ function renderSettings() {
 
 window.addEventListener('hashchange', route);
 $('#status-btn').onclick = openStatus;
-document.querySelector('[data-open-status]').onclick = openStatus;
 $('#panel-close').onclick = closeStatus;
 $('#scrim').onclick = closeStatus;
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeStatus());

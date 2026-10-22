@@ -191,8 +191,8 @@ export function buildTools(ctx: OpsContext): AgentTool[] {
     read('diagnose', 'SRE investigation: logs, events, CPU/RAM, releases and live probe → hypothesis board with root cause, evidence ids and ranked fixes. Use for any "slow", "down", "500", "error" complaint.',
       obj({ app: appParam, path: str('URL path to probe, e.g. /products'), minutes: { type: 'number' } }, ['app']),
       async (a) => {
-        const { text, board } = await ops.diagnoseText(ctx, a.app, { path: a.path, minutes: a.minutes });
-        return { text, data: ops.boardSummary(board) };
+        const { text, board, incident } = await ops.diagnoseText(ctx, a.app, { path: a.path, minutes: a.minutes });
+        return { text, data: { ...ops.boardSummary(board), incidentId: incident?.id } };
       }),
     read('verify', 'After a fix: probe the site several times and compare with targets fixed before the change.',
       obj({ app: appParam, path: str('URL path') }, ['app']), async (a) => {

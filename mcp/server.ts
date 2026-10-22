@@ -157,7 +157,7 @@ server.registerTool('diagnose', {
     minutes: z.number().int().min(5).max(360).default(30),
   },
   annotations: readOnly,
-}, ({ app: name, dir, path, minutes }) => safely(async () => (await ops.diagnoseText(ctx, name, { dir, path, minutes })).text, name));
+}, ({ app: name, dir, path, minutes }) => safely(async () => (await ops.diagnoseText(ctx, name, { dir, path, minutes, source: 'mcp' })).text, name));
 
 server.registerTool('verify', {
   title: 'Verify a fix',

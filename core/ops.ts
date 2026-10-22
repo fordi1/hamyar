@@ -12,6 +12,7 @@ import { criteriaFor, verifyFix } from './sre/verify.js';
 import { renderPostmortem, type ActionRecord } from './sre/postmortem.js';
 import { appUrl, probe, type DeployEvent } from './deployer.js';
 import type { Board } from './sre/rca.js';
+import type { Incident } from './incidents.js';
 import { checkPublicDns, registrarHint, requiredRecords, splitDomain } from './domain.js';
 
 export interface OpsContext {
@@ -108,10 +109,25 @@ const TOOL_FOR_FIX: Record<string, string> = {
   set_env: 'set_env', restart: 'restart_app', turn_on: 'turn_on_app', resize: 'resize_plan', rollback: 'rollback', redeploy_port: 'deploy',
 };
 
-export async function diagnoseText(ctx: OpsContext, app: string, opts: { dir?: string; path?: string; minutes?: number } = {}): Promise<{ text: string; board: Board }> {
+export async function diagnoseText(
+  ctx: OpsContext,
+  app: string,
+  opts: { dir?: string; path?: string; minutes?: number; source?: 'dashboard' | 'mcp' } = {},
+): Promise<{ text: string; board: Board; incident?: Incident }> {
   const board = await diagnose(ctx.client, app, { projectDir: opts.dir ? resolve(opts.dir) : undefined, probePath: opts.path, windowMinutes: opts.minutes });
   ctx.boards.set(app, board);
+  // opens or updates the app's incident (screen D); a healthy check opens nothing
+  const incident = ctx.policy.incidents.recordDiagnosis({
+    ...boardSummary(board),
+    at: board.createdAt,
+    source: opts.source ?? 'dashboard',
+    logs: clusterLogs(board.snapshot.logs)
+      .filter((c) => c.isError)
+      .slice(0, 5)
+      .map((c) => ({ count: c.count, sample: c.samples[0] ?? c.template })),
+  });
   const out = [renderBoard(board)];
+  if (incident) out.push(`\n📂 حادثه‌ی ${incident.id} در تاریخچه‌ی حوادث داشبورد ثبت شد.`);
 
   const next = board.fixes.find((f) => TOOL_FOR_FIX[f.action]);
   if (next) out.push(`\n➡️ ابزار پیشنهادی برای راه‌حل اول قابل‌اجرا: ${TOOL_FOR_FIX[next.action]} ${JSON.stringify({ app, ...(next.args ?? {}) })}`);
@@ -126,7 +142,7 @@ export async function diagnoseText(ctx: OpsContext, app: string, opts: { dir?: s
       '- بعد از اصلاح: deploy با همان app و پوشه‌ی پروژه، سپس verify.',
     );
   }
-  return { text: out.join('\n'), board };
+  return { text: out.join('\n'), board, incident };
 }
 
 export async function verifyText(ctx: OpsContext, app: string, path?: string): Promise<{ text: string; passed: boolean; rows: { metric: string; before: string; after: string; target: string; ok: boolean }[] }> {
@@ -140,6 +156,7 @@ export async function verifyText(ctx: OpsContext, app: string, path?: string): P
     ...result.rows.map((r) => `| ${r.metric} | ${r.before} | ${r.after} | ${r.target} | ${r.ok ? '✅' : '❌'} |`),
     result.passed ? 'برای گزارش کامل: incident_report' : 'diagnose را دوباره اجرا کن یا راه‌حل بعدی را امتحان کن (یا rollback).',
   ].join('\n');
+  ctx.policy.incidents.recordVerification(app, { passed: result.passed, rows: result.rows });
   return { text, passed: result.passed, rows: result.rows };
 }
 

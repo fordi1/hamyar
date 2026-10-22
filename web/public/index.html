@@ -47,6 +47,7 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
     <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
     <symbol id="i-ram" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11v2M11 11v2M15 11v2M7 17v2M12 17v2M17 17v2"/></symbol>
     <symbol id="mascot" viewBox="0 0 120 120">
@@ -78,6 +79,7 @@
         <a href="#/apps" data-route="apps"><svg class="ico"><use href="#i-server"/></svg><span>سرویس‌ها</span></a>
         <a href="#/monitor" data-route="monitor"><svg class="ico"><use href="#i-pulse"/></svg><span>مانیتورینگ</span></a>
         <a href="#/logs" data-route="logs"><svg class="ico"><use href="#i-file"/></svg><span>لاگ‌ها</span></a>
+        <a href="#/incidents" data-route="incidents"><svg class="ico"><use href="#i-bug"/></svg><span>حوادث</span><b class="count warn" data-open-incidents hidden></b></a>
         <a href="#/approvals" data-route="approvals"><svg class="ico"><use href="#i-shield"/></svg><span>تأییدها</span><b class="count" data-count hidden></b></a>
         <a href="#/settings" data-route="settings"><svg class="ico"><use href="#i-gear"/></svg><span>تنظیمات</span></a>
       </nav>
@@ -153,6 +155,11 @@
           <div id="apps-view" class="stack"></div>
         </section>
 
+        <!-- D. Incident workspace and G. incident history -->
+        <section class="page" data-page="incidents" aria-label="حوادث" hidden>
+          <div id="incidents-view" class="stack"></div>
+        </section>
+
         <!-- E. Approvals inbox: requests from this dashboard and from Claude Code (MCP) -->
         <section class="page" data-page="approvals" aria-labelledby="approvals-title" hidden>
           <div class="page-head">
@@ -193,7 +200,7 @@
         <a href="#/" data-route="home"><svg class="ico"><use href="#i-home"/></svg>خانه</a>
         <a href="#/deploy" data-route="deploy"><svg class="ico"><use href="#i-rocket"/></svg>دیپلوی</a>
         <a href="#/apps" data-route="apps"><svg class="ico"><use href="#i-server"/></svg>سرویس‌ها</a>
-        <a href="#/approvals" data-route="approvals"><svg class="ico"><use href="#i-shield"/></svg>تأییدها<b class="count" data-count hidden></b></a>
+        <a href="#/incidents" data-route="incidents"><svg class="ico"><use href="#i-bug"/></svg>حوادث</a>
         <a href="#/settings" data-route="settings"><svg class="ico"><use href="#i-gear"/></svg>تنظیمات</a>
       </nav>
     </div>
@@ -235,5 +242,6 @@
   <script src="/app.js"></script>
   <script src="/wizard.js"></script>
   <script src="/apps.js"></script>
+  <script src="/incidents.js"></script>
 </body>
 </html>

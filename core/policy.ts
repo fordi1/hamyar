@@ -6,6 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ApprovalStore, maskSecrets } from './approvals.js';
 import { OperationStore } from './operations.js';
+import { IncidentStore } from './incidents.js';
 
 export type Tier = 'T0' | 'T1' | 'T2' | 'T3';
 export type Mode = 'observe' | 'review' | 'auto-safe';
@@ -30,6 +31,7 @@ export class Policy {
   readonly mode: Mode;
   readonly approvals: ApprovalStore;
   readonly operations: OperationStore;
+  readonly incidents: IncidentStore;
   private auditPath: string;
   private now: () => number;
 
@@ -40,6 +42,7 @@ export class Policy {
     const approvalsPath = opts.approvalsPath ?? join(dirname(this.auditPath), '.hamyar', 'approvals.json');
     this.approvals = new ApprovalStore({ path: approvalsPath, now: this.now });
     this.operations = new OperationStore({ path: join(dirname(approvalsPath), 'operations.json') });
+    this.incidents = new IncidentStore({ path: join(dirname(approvalsPath), 'incidents.json') });
   }
 
   static fromEnv(root = '.'): Policy {
