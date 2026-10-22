@@ -47,7 +47,7 @@ function stepperView() {
     return `<li class="${cls}"${n === wiz.step ? ' aria-current="step"' : ''}><i>${n < wiz.step ? icon('check') : fa(n)}</i>${label}</li>`;
   }).join('');
   return `<ol class="stepper" aria-label="مراحل دیپلوی">${items}</ol>
-    <div class="step-mobile"><div class="row"><b>مرحله‌ی ${fa(wiz.step)} از ۴ · ${WIZ_STEPS[wiz.step - 1]}</b><span class="muted">${wiz.step < 4 ? `بعدی: ${WIZ_STEPS[wiz.step]}` : ''}</span></div><div class="bar"><i style="width:${wiz.step * 25}%"></i></div></div>`;
+    <div class="step-mobile"><div class="row"><b>مرحله‌ی ${fa(wiz.step)} از ۴ · ${WIZ_STEPS[wiz.step - 1]}</b><span class="muted">${wiz.step < 4 ? `بعدی: ${WIZ_STEPS[wiz.step]}` : ''}</span></div><div class="bar"><i data-pct="${wiz.step / 4}"></i></div></div>`;
 }
 
 const errorView = () => (wiz.error ? `<p class="form-error" role="alert">${icon('alert')}<span>${esc(wiz.error)}</span></p>` : '');
@@ -92,7 +92,7 @@ function sourceForm() {
       <div class="field"><label for="gh-branch">شاخه (اختیاری)</label><input id="gh-branch" class="ltr" placeholder="main" value="${esc(g.branch)}"><small>خالی = شاخه‌ی پیش‌فرض ریپازیتوری</small></div>
       <div class="field"><label for="gh-subdir">زیرپوشه (اختیاری)</label><input id="gh-subdir" class="ltr" placeholder="apps/web" value="${esc(g.subdir)}"></div>
     </div>
-    <p class="muted" style="margin:0">همیار کد را خودش از GitHub دانلود می‌کند و از راه رسمی آپلود لیارا می‌فرستد. ریپازیتوری خصوصی در این نسخه پشتیبانی نمی‌شود؛ برای آن ZIP را آپلود کنید.</p>`;
+    <p class="note-sm">همیار کد را خودش از GitHub دانلود می‌کند و از راه رسمی آپلود لیارا می‌فرستد. ریپازیتوری خصوصی در این نسخه پشتیبانی نمی‌شود؛ برای آن ZIP را آپلود کنید.</p>`;
 }
 
 function stepSource() {
@@ -195,7 +195,7 @@ async function fetchSource() {
 function planCard(p) {
   const checked = p.id === wiz.planID;
   return `<button type="button" class="plan ${p.role}" role="radio" aria-checked="${checked}" ${p.affordable ? '' : 'aria-disabled="true"'} data-plan="${esc(p.id)}">
-    <div class="plan-head"><b>${esc(p.id)}</b>${p.role === 'recommended' ? `<span class="rec">${ROLE_LABEL.recommended}</span>` : `<span class="muted" style="font-size:12px">${ROLE_LABEL[p.role]}</span>`}</div>
+    <div class="plan-head"><b>${esc(p.id)}</b>${p.role === 'recommended' ? `<span class="rec">${ROLE_LABEL.recommended}</span>` : `<span class="note-sm">${ROLE_LABEL[p.role]}</span>`}</div>
     <ul><li>${icon('cpu')}${fa(p.cpu)} هسته پردازنده</li><li>${icon('ram')}${p.ramGB < 1 ? `${fa(p.ramGB * 1024)} مگابایت` : `${fa(p.ramGB)} گیگابایت`} حافظه</li></ul>
     <span class="price">${fa(p.monthly)} <small>تومان در ماه</small></span>
     ${p.affordable ? '' : '<span class="why bad">موجودی برای یک روز این پلن کافی نیست</span>'}
@@ -220,13 +220,13 @@ function stepPlan() {
     <section class="card">
       <div class="analysis-head"><b>چه چیزی پیدا شد</b><button class="btn ghost small" type="button" data-go="1">تغییر منبع</button></div>
       <div class="chips">${chips}</div>
-      ${warnings ? `<div class="stack" style="margin-top:10px">${warnings}</div>` : ''}
+      ${warnings ? `<div class="stack mt">${warnings}</div>` : ''}
       <details class="details"><summary>جزئیات فنی</summary><ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul><pre>${esc(JSON.stringify(a.liaraJson, null, 2))}</pre></details>
     </section>
-    <h2 class="h-title" style="margin:4px 0 0;font-size:17px">پلن پیشنهادی همیار</h2>
+    <h2 class="h-title plans-title">پلن پیشنهادی همیار</h2>
     <div class="plans" role="radiogroup" aria-label="پلن">${a.plans.map(planCard).join('')}</div>
     <details class="details card"><summary>چرا این پلن؟</summary><ul>${a.planReasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></details>
-    <p class="muted" style="margin:0;text-align:center;font-size:12.5px">قیمت‌ها از فهرست زنده‌ی پلن‌های لیارا · موجودی حساب: ${fa(Math.round(a.balance))} تومان</p>
+    <p class="note-sm center">قیمت‌ها از فهرست زنده‌ی پلن‌های لیارا · موجودی حساب: ${fa(Math.round(a.balance))} تومان</p>
     ${none ? `<p class="form-warn">${icon('wallet')}<span>موجودی حساب برای هیچ‌کدام از این پلن‌ها کافی نیست. همیار نمی‌تواند حساب را شارژ کند؛ از کنسول لیارا شارژ کنید و بعد «بررسی دوباره‌ی موجودی» را بزنید.</span></p>` : ''}
     ${errorView()}
     <div class="wizard-actions">
@@ -290,8 +290,8 @@ function stepSettings() {
       </div>
       ${
         a.env.required.length
-          ? `<p class="muted" style="margin:0">${icon('lock')} مقدارها فقط به لیارا فرستاده می‌شوند؛ هوش مصنوعی، فایل‌های همیار و گزارش‌ها آن‌ها را نمی‌بینند.</p>${envFields}`
-          : '<p class="muted" style="margin:0">کد شما متغیر محیطی لازمی نمی‌خواند.</p>'
+          ? `<p class="note-sm">${icon('lock')} مقدارها فقط به لیارا فرستاده می‌شوند؛ هوش مصنوعی، فایل‌های همیار و گزارش‌ها آن‌ها را نمی‌بینند.</p>${envFields}`
+          : '<p class="note-sm">کد شما متغیر محیطی لازمی نمی‌خواند.</p>'
       }
       ${optional}
       ${errorView()}
@@ -359,7 +359,7 @@ function approvalView() {
           <input class="grow" id="reject-reason" placeholder="چرا؟ (اختیاری)" aria-label="دلیل رد">
           <button class="btn danger" type="button" id="wiz-reject-confirm">ثبت رد</button>
         </div>
-        <p class="muted" style="margin:0;font-size:12.5px">این کار فقط با تأیید شما اجرا می‌شود و در تاریخچه‌ی تأییدها ثبت می‌شود.</p>
+        <p class="note-sm">این کار فقط با تأیید شما اجرا می‌شود و در تاریخچه‌ی تأییدها ثبت می‌شود.</p>
       </div>
     </section>`;
 }

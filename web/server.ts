@@ -22,6 +22,7 @@ import { normalizeSeries } from '../core/sre/collect.js';
 import { resumeOperations } from '../core/operations.js';
 import { MAX_ARCHIVE_BYTES, SourceError, SourceStore, extractZip, fetchGithub, parseGithubUrl } from '../core/sources.js';
 import { WizardError, analyzeSource, cancelDeploy, requestDeploy, startDeploy } from '../core/wizard.js';
+import { RANGES, requestAppAction, runApprovedAppAction, shapeLogs, shapeMetrics, shapeReleases, validAppName, type LogLevel, type Range } from '../core/monitor.js';
 import { LoginLimiter, SECURITY_HEADERS, SessionStore, checkMutationRequest, passwordProblem } from './security.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -194,6 +195,41 @@ async function quick(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+// ---------- app pages: monitoring, logs, releases ----------
+
+const LOG_RANGES: Record<string, number> = { '15m': 900, '1h': 3600, '6h': 21_600, '24h': 86_400 };
+
+async function appData(res: ServerResponse, app: string, kind: string, url: URL) {
+  if (!validAppName(app)) return json(res, 400, { error: 'نام برنامه معتبر نیست.' });
+  const now = Math.floor(Date.now() / 1000);
+  if (kind === 'metrics') {
+    const range = (url.searchParams.get('range') ?? '1h') as Range;
+    const since = now - (RANGES[range] ?? RANGES['1h']);
+    const optional = <T>(p: Promise<T>) => p.catch(() => undefined);
+    const [info, plans, cpu, memory, rx, tx, summary, releases] = await Promise.all([
+      ctx.client.getApp(app),
+      optional(ctx.client.appPlans()),
+      optional(ctx.client.metrics(app, 'cpu', since)),
+      optional(ctx.client.metrics(app, 'memory', since)),
+      optional(ctx.client.metrics(app, 'network-receive', since)),
+      optional(ctx.client.metrics(app, 'network-transmit', since)),
+      optional(ctx.client.metricsSummary(app)),
+      optional(ctx.client.releases(app, 20)),
+    ]);
+    const plan = plans?.[info.planID];
+    const markers = shapeReleases(releases).filter((r) => r.createdAt >= since * 1000).map((r) => ({ at: r.createdAt, current: r.current }));
+    return json(res, 200, { range, since: since * 1000, ...shapeMetrics({ cpu, memory, rx, tx, summary }, { ramGB: plan?.RAM?.amount, cpu: plan?.CPU?.amount }), releases: markers });
+  }
+  if (kind === 'logs') {
+    const window = LOG_RANGES[url.searchParams.get('range') ?? '1h'] ?? 3600;
+    const level = url.searchParams.get('level') as LogLevel | null;
+    const raw = await ctx.client.logs(app, now - window);
+    return json(res, 200, shapeLogs(raw, { level: level && ['error', 'warn', 'info'].includes(level) ? level : undefined, q: url.searchParams.get('q') ?? undefined }));
+  }
+  if (kind === 'releases') return json(res, 200, shapeReleases(await ctx.client.releases(app, 20)));
+  json(res, 404, { error: 'not found' });
+}
+
 // ---------- deploy wizard: source intake, analysis, approval, run ----------
 
 const publicSource = (s: { id: string; origin: string; label: string }) => ({ id: s.id, origin: s.origin, label: s.label });
@@ -307,7 +343,10 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
     if (!authorized(req)) return json(res, 401, { error: 'login required' });
-    if (url.pathname.startsWith('/api/source/') || url.pathname.startsWith('/api/wizard/')) return wizard(req, res, url);
+    if (url.pathname.startsWith('/api/source/') || url.pathname.startsWith('/api/wizard/')) return await wizard(req, res, url);
+    const appRoute = req.method === 'GET' && url.pathname.match(/^\/api\/apps\/([^/]+)\/(metrics|logs|releases)$/);
+    // awaited so a Liara error reaches the catch below instead of crashing the server
+    if (appRoute) return await appData(res, decodeURIComponent(appRoute[1]), appRoute[2], url);
 
     switch (`${req.method} ${url.pathname}`) {
       case 'GET /api/config':
@@ -332,9 +371,9 @@ const server = createServer(async (req, res) => {
       case 'GET /api/audit':
         return json(res, 200, ctx.policy.recent(30).reverse());
       case 'POST /api/chat':
-        return chat(req, res);
+        return await chat(req, res);
       case 'POST /api/quick':
-        return quick(req, res);
+        return await quick(req, res);
       case 'GET /api/approvals': {
         // Pending requests from this dashboard and from MCP clients; survives refresh and restart.
         const list = ctx.policy.approvals.list({ status: 'pending' }).map((r) => ({
@@ -342,6 +381,7 @@ const server = createServer(async (req, res) => {
           needsValues: r.tool === 'set_env' && Array.isArray(r.args.keys) ? r.args.keys : undefined,
           waiting: pending.has(r.id),
           wizard: Boolean(r.args.wizard),
+          direct: Boolean(r.args.direct),
         }));
         return json(res, 200, list);
       }
@@ -356,12 +396,28 @@ const server = createServer(async (req, res) => {
         if (record.args.wizard && approved) return json(res, 409, { error: 'این دیپلوی را از صفحه‌ی «دیپلوی جدید» تأیید کنید؛ مقدار متغیرها همان‌جا وارد شده است.' });
         const decided = ctx.policy.approvals.decide(record.id, { approved: Boolean(approved), by: 'user', channel: 'dashboard', reason });
         ctx.policy.audit({ tool: decided.tool, tier: decided.tier, args: decided.args, outcome: decided.status === 'approved' ? 'approved' : 'rejected', approvedBy: 'user (dashboard)', approvalId: decided.id, detail: reason });
+        // a button on the app page: nothing else waits for it, so the dashboard runs it now
+        if (decided.status === 'approved' && decided.args.direct) {
+          runApprovedAppAction(ctx, decided.id).catch((err) => console.error('direct action failed:', err?.message ?? err));
+          return json(res, 200, { ok: true, status: decided.status, source: decided.source, running: true });
+        }
         const resolveDecision = pending.get(record.id);
         if (resolveDecision) {
           pending.delete(record.id);
           resolveDecision({ approved: Boolean(approved), reason, values, by: 'user' });
         }
         return json(res, 200, { ok: true, status: decided.status, source: decided.source });
+      }
+      case 'POST /api/action/request': {
+        const { tool, args } = await body(req);
+        try {
+          const r = await requestAppAction(ctx, String(tool ?? ''), args && typeof args === 'object' ? args : {});
+          if (r.status === 'needs_approval') return json(res, 200, { status: r.status, id: r.approvalId, tool, tier: r.tier, preview: r.preview, expiresAt: r.expiresAt, source: 'dashboard' });
+          if (r.status === 'done') return json(res, 200, { status: 'done' });
+          return json(res, 400, { error: r.error });
+        } catch (err: any) {
+          return json(res, 400, { error: err?.message ?? String(err) });
+        }
       }
       case 'POST /api/stop': {
         ctx.policy.revokeAll();

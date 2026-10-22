@@ -10,6 +10,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const icon = (name, cls = '') => `<svg class="ico ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const mascot = (cls = 'sm') => `<svg class="mascot ${cls}" aria-hidden="true"><use href="#mascot"/></svg>`;
 
+// The CSP forbids inline style attributes; bar widths travel as data-pct (0..1) and are
+// applied through the CSSOM, which the CSP allows.
+const applyPct = (root) => root.querySelectorAll?.('[data-pct]').forEach((el) => (el.style.width = `${Math.round(Math.min(1, Math.max(0, Number(el.dataset.pct) || 0)) * 100)}%`));
+new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => n.nodeType === 1 && (applyPct(n), n.matches('[data-pct]') && applyPct(n.parentNode))))).observe(document.body, { childList: true, subtree: true });
+
 const TOOL_LABELS = {
   liara_overview: 'مرور حساب لیارا', analyze_project: 'تحلیل پروژه', app_status: 'وضعیت برنامه', get_logs: 'خواندن لاگ‌ها',
   diagnose: 'پیدا کردن علت مشکل', verify: 'بررسی نتیجه', check_domain: 'بررسی دامنه', incident_report: 'گزارش حادثه',
@@ -489,7 +494,7 @@ function setHealth(stateName) {
 
 // usage as a share of the plan limit; undefined when the plan size is unknown
 const share = (value, limit) => (limit ? Math.min(1, value / limit) : undefined);
-const meter = (ratio, cls = '') => (ratio === undefined ? '' : `<div class="bar ${ratio > 0.85 ? 'hot' : cls}"><i style="width:${Math.round(ratio * 100)}%"></i></div>`);
+const meter = (ratio, cls = '') => (ratio === undefined ? '' : `<div class="bar ${ratio > 0.85 ? 'hot' : cls}"><i data-pct="${ratio}"></i></div>`);
 
 async function loadStatus() {
   const card = $('#app-card');
@@ -600,17 +605,27 @@ $('#login-form').onsubmit = async (e) => {
 
 // ---------- routes and the status sheet ----------
 
-const ROUTES = ['home', 'deploy', 'approvals', 'settings'];
+const ROUTES = ['home', 'deploy', 'apps', 'approvals', 'settings'];
 
 function route() {
-  const name = location.hash.replace(/^#\/?/, '').split('/')[0] || 'home';
+  const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
+  const name = parts[0] || 'home';
+  // menu shortcuts to the selected app's tabs
+  if (name === 'monitor' || name === 'logs') {
+    const tab = name === 'monitor' ? 'monitoring' : 'logs';
+    location.replace(state.app ? `#/apps/${encodeURIComponent(state.app)}/${tab}` : '#/apps');
+    return;
+  }
   const page = ROUTES.includes(name) ? name : 'home';
   document.querySelectorAll('.page').forEach((p) => (p.hidden = p.dataset.page !== page));
-  document.querySelectorAll('[data-route]').forEach((a) => (a.dataset.route === page ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  const tab = page === 'apps' ? parts[2] : undefined;
+  const active = tab === 'monitoring' ? 'monitor' : tab === 'logs' ? 'logs' : page;
+  document.querySelectorAll('[data-route]').forEach((a) => (a.dataset.route === active ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   closeStatus();
   if (page === 'approvals') loadTimeline();
   if (page === 'settings') renderSettings();
   if (page === 'deploy') window.renderWizard?.();
+  if (page === 'apps') window.renderApps?.(parts[1], parts[2]);
   // move focus for keyboard and screen-reader users, except on first load
   if (state.routed) $('#view').focus({ preventScroll: true });
   state.routed = true;
