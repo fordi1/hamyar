@@ -104,7 +104,8 @@ export class LiaraClient {
   }
   async balance(): Promise<number> {
     const r = await this.request<any>('GET', '/v1/billing');
-    return r.user?.balance ?? 0;
+    // with a teamID Liara returns both; team apps are paid from the team balance
+    return (this.opts.teamId ? r.team?.balance : undefined) ?? r.user?.balance ?? 0;
   }
   async appPlans(): Promise<Record<string, any>> {
     return (await this.me()).plans?.projects ?? {};
