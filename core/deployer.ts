@@ -1,12 +1,15 @@
-// Ships a local folder to an existing Liara app: pack → upload → release →
-// follow the build → probe the live URL. Approval and app creation happen in the
-// caller (policy layer); this module only does the mechanics and reports progress.
+// Ships a local folder to an existing Liara app and reports an explicit state:
+// PREPARING → UPLOADING → BUILDING → DEPLOYING → VERIFYING → VERIFIED_HEALTHY | HEALTH_FAILED,
+// or FAILED / CANCELED. A release that Liara marks READY is not "healthy" until
+// our own checks pass. ANALYZING and AWAITING_APPROVAL happen in the caller.
 import { rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { LiaraClient } from './liara-client.js';
 import { packProject } from './pack.js';
 
-export type DeployPhase = 'packing' | 'uploading' | 'queued' | 'building' | 'deploying' | 'ready' | 'failed' | 'probing' | 'done';
+export type DeployPhase =
+  | 'ANALYZING' | 'AWAITING_APPROVAL' | 'PREPARING' | 'UPLOADING' | 'BUILDING' | 'DEPLOYING'
+  | 'VERIFYING' | 'VERIFIED_HEALTHY' | 'HEALTH_FAILED' | 'FAILED' | 'CANCELED';
 
 export interface DeployEvent {
   phase: DeployPhase;
@@ -22,7 +25,7 @@ export interface ReleaseResult {
   lastLines: string[];
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // Mirrors Liara CLI src/services/build-logs.ts: any STDERR line means the build failed.
 export async function waitForRelease(
@@ -51,27 +54,26 @@ export async function waitForRelease(
       lastLines.push(out.line);
       if (lastLines.length > 50) lastLines.shift();
       if (out.stream !== 'STDOUT') {
-        onEvent({ phase: 'failed', line: out.line });
+        onEvent({ phase: 'FAILED', line: out.line });
         return { state: 'FAILED', failReason: out.line, lastLines };
       }
-      onEvent({ phase: 'building', line: out.line });
+      onEvent({ phase: 'BUILDING', line: out.line });
     }
     if (buildOutput.length) since = buildOutput[buildOutput.length - 1].createdAt;
 
     switch (release?.state) {
       case 'READY':
-        onEvent({ phase: 'ready' });
         return { state: 'READY', lastLines };
       case 'FAILED':
       case 'CANCELED':
       case 'TIMEDOUT':
       case 'UNHEALTHY':
-        onEvent({ phase: 'failed', message: release.failReason ?? release.state });
+        onEvent({ phase: release.state === 'CANCELED' ? 'CANCELED' : 'FAILED', message: release.failReason ?? release.state });
         return { state: release.state, failReason: release.failReason, lastLines };
       case 'DEPLOYING':
         if (!announcedDeploying) {
           announcedDeploying = true;
-          onEvent({ phase: 'deploying' });
+          onEvent({ phase: 'DEPLOYING' });
         }
         break;
     }
@@ -132,20 +134,79 @@ export interface DeployInput {
   platform: string;
   port: number;
   message?: string;
-  healthCheck?: unknown;
+  // liara.json-style healthCheck; the command string is split on spaces like the CLI does
+  healthCheck?: { command: string; interval: number; timeout: number; retries: number; startPeriod: number };
+  // path our own verification probes, e.g. /health
+  healthPath?: string;
+}
+
+export type FinalState = 'VERIFIED_HEALTHY' | 'HEALTH_FAILED' | 'FAILED' | 'CANCELED';
+
+export interface Verification {
+  url: string;
+  rounds: number;
+  okRatio: number;
+  p95: number;
+  // the release Liara serves after the deploy; if it is not ours, the old one is still live
+  currentRelease?: string;
+  reason?: string;
 }
 
 export interface DeployResult {
+  state: FinalState;
   releaseID: string;
   release: ReleaseResult;
   url: string;
-  probe?: ProbeSummary;
+  verification?: Verification;
 }
 
-export async function deploySource(client: LiaraClient, input: DeployInput, onEvent: (e: DeployEvent) => void = () => {}): Promise<DeployResult> {
-  onEvent({ phase: 'packing' });
+export interface VerifyDeps {
+  probe: (url: string, count?: number) => Promise<ProbeSummary>;
+  sleep: (ms: number) => Promise<void>;
+  rounds?: number;
+  intervalMs?: number;
+}
+
+const defaultDeps: VerifyDeps = { probe: (u, c) => probe(u, c), sleep, rounds: 3, intervalMs: 10_000 };
+
+// Several probe rounds a few seconds apart, plus a check that Liara now serves this release.
+export async function verifyDeployment(
+  client: Pick<LiaraClient, 'releases'>,
+  app: string,
+  releaseID: string,
+  path = '/',
+  deps: VerifyDeps = defaultDeps,
+): Promise<{ healthy: boolean; verification: Verification }> {
+  const url = appUrl(app) + path;
+  const rounds = deps.rounds ?? 3;
+  const samples: ProbeSample[] = [];
+  for (let i = 0; i < rounds; i++) {
+    if (i) await deps.sleep(deps.intervalMs ?? 10_000);
+    samples.push(...(await deps.probe(url, 3)).samples);
+  }
+  const summary = summarizeProbe(samples);
+  const currentRelease = (await client.releases(app, 1).catch(() => undefined))?.currentRelease as string | undefined;
+  const verification: Verification = { url, rounds, okRatio: summary.okRatio, p95: summary.p95, currentRelease };
+  if (currentRelease && currentRelease !== releaseID) {
+    verification.reason = `لیارا هنوز نسخه‌ی قبلی (${currentRelease}) را سرو می‌کند؛ نسخه‌ی جدید جایگزین نشده است.`;
+    return { healthy: false, verification };
+  }
+  if (!summary.healthy) {
+    verification.reason = `فقط ${Math.round(summary.okRatio * 100)}٪ درخواست‌ها موفق بودند (p95=${summary.p95}ms).`;
+    return { healthy: false, verification };
+  }
+  return { healthy: true, verification };
+}
+
+export async function deploySource(
+  client: LiaraClient,
+  input: DeployInput,
+  onEvent: (e: DeployEvent) => void = () => {},
+  deps: VerifyDeps = defaultDeps,
+): Promise<DeployResult> {
+  onEvent({ phase: 'PREPARING' });
   const pack = await packProject(input.dir, input.platform);
-  onEvent({ phase: 'uploading', message: `${pack.fileCount} files, ${Math.ceil(pack.sizeBytes / 1024)} KB` });
+  onEvent({ phase: 'UPLOADING', message: `${pack.fileCount} files, ${Math.ceil(pack.sizeBytes / 1024)} KB` });
 
   let sourceID: string;
   try {
@@ -159,16 +220,23 @@ export async function deploySource(client: LiaraClient, input: DeployInput, onEv
     port: input.port,
     type: input.platform,
     message: input.message ?? 'Deployed by Hamyar',
-    ...(input.healthCheck ? { healthCheck: input.healthCheck } : {}),
+    ...(input.healthCheck ? { healthCheck: { ...input.healthCheck, command: input.healthCheck.command.split(' ') } } : {}),
   });
-  onEvent({ phase: 'queued', message: releaseID });
+  onEvent({ phase: 'BUILDING', message: releaseID });
 
   const release = await waitForRelease(client, releaseID, onEvent);
   const url = appUrl(input.app);
-  if (release.state !== 'READY') return { releaseID, release, url };
+  if (release.state === 'CANCELED') return { state: 'CANCELED', releaseID, release, url };
+  // Liara's own health check failed: traffic stays on the previous release
+  if (release.state === 'UNHEALTHY') {
+    onEvent({ phase: 'HEALTH_FAILED', message: release.failReason });
+    return { state: 'HEALTH_FAILED', releaseID, release, url };
+  }
+  if (release.state !== 'READY') return { state: 'FAILED', releaseID, release, url };
 
-  onEvent({ phase: 'probing', message: url });
-  const result = await probe(url);
-  onEvent({ phase: 'done' });
-  return { releaseID, release, url, probe: result };
+  onEvent({ phase: 'VERIFYING', message: url });
+  const { healthy, verification } = await verifyDeployment(client, input.app, releaseID, input.healthPath ?? '/', deps);
+  const state: FinalState = healthy ? 'VERIFIED_HEALTHY' : 'HEALTH_FAILED';
+  onEvent({ phase: state, message: verification.reason });
+  return { state, releaseID, release, url, verification };
 }

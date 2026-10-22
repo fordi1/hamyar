@@ -111,6 +111,13 @@ describe('runAgent', () => {
     expect(h.events.find((e) => e.type === 'tool' && e.status === 'done')).toMatchObject({ data: { kind: 'board' } });
   });
 
+  it('masks the app env values (known secrets) in tool output sent to the model', async () => {
+    const { ctx } = context({ listApps: async () => [{ project_id: 'shop', type: 'node', planID: 'p', status: 'connected to db with pa55-word-xyz', scale: 1 }] });
+    const { llm, seen } = scriptedLLM([call('liara_overview', {}), { content: 'ok' }]);
+    await runAgent({ llm, tools: buildTools(ctx), history: [], userMessage: 'x', hooks: hooks(() => ({ approved: true })).hooks, knownSecrets: ['pa55-word-xyz'] });
+    expect(JSON.stringify(seen[1])).not.toContain('pa55-word-xyz');
+  });
+
   it('stops after the step limit', async () => {
     const { ctx } = context();
     const { llm } = scriptedLLM(Array.from({ length: 20 }, (_, i) => call('liara_overview', {}, `c${i}`)));

@@ -25,7 +25,7 @@ It ships as two front ends over one core:
 | **Domains** | Connects a domain, tells the user the exact records or IRNIC nameservers to set, checks public DNS until they appear, can run the domain on Liara DNS and create the records itself, then enables SSL. |
 | **SRE investigation** | Collects logs, events, container state, CPU/RAM series, release history and a live HTTP probe; runs 12 deterministic detectors; builds a **hypothesis board** (validated / rejected / inconclusive) with numbered evidence (E1, E2…) and a root cause; ranks fixes; writes a Persian incident report. |
 | **Fix → verify** | Success targets are fixed *before* a change; afterwards the site is measured again and shown as a before/after table. |
-| **Human-in-the-loop** | Risk tiers enforced in code, single-use confirm tokens bound to exact arguments, MCP elicitation (the human answers, not the model), rate limits, kill switch, audit log. Deletion is not implemented at all. |
+| **Human-in-the-loop** | Risk tiers enforced in code; persistent approval requests that only a human can decide (dashboard, MCP elicitation or an interactive terminal), bound to exact arguments, single use, expiring; rate limits, kill switch, audit log. Deletion is not implemented at all. |
 
 ### The 12 detectors
 
@@ -163,17 +163,22 @@ Platform detection, default ports, ignore rules and the release body are ported 
 | T2 state / cost | deploy, launch, env, plan change, rollback, turn off, domain, DNS | preview + approval, always |
 | T3 destructive | delete app / disk / database / domain | **not implemented** — the user does it in the console |
 
-- **Confirm tokens**: single-use, 10-minute TTL, bound to a hash of the exact tool and arguments
-  (nested values included). Changed arguments or reuse are blocked.
+- **Approval requests**: stored on disk and shared by MCP, dashboard and terminal; decided only by a
+  human in the dashboard, an MCP elicitation answer, or `npm run approve -- <id>` in an interactive
+  terminal. Bound to a salted hash of the exact arguments, single use, 10-minute expiry. The id
+  alone never authorizes anything.
 - **MCP elicitation**: when the client supports it, the server asks the human directly.
 - **Rate limits**: 3 deploys / 10 min, one restart per app / 5 min, 10 changes / hour.
-- **Kill switch**: «توقف» cancels every pending approval and revokes all tokens.
+- **Kill switch**: «توقف» revokes every pending and approved-but-unused request.
+- **Deploy truth**: success is reported only as VERIFIED_HEALTHY (probe rounds passed and Liara
+  serves the new release); otherwise HEALTH_FAILED with the measured reason.
 - **Secrets**: `.env` files are never uploaded with the code; env values never reach the model,
   previews or the audit log; log text is redacted (tokens, passwords in URLs, emails, IPs) before the
   model sees it.
 - **Audit log**: `audit.jsonl` records previewed / executed / failed / rejected / blocked actions and
   who approved them.
-- **Dashboard**: localhost-only without a password; HttpOnly session cookie with one.
+- **Dashboard**: localhost-only without a password; with one (12+ characters): expiring HttpOnly
+  session, login rate limit, same-origin JSON-only writes, strict CSP.
 
 ---
 
@@ -198,9 +203,9 @@ Platform detection, default ports, ignore rules and the release body are ported 
 
 | Check | Result |
 |---|---|
-| Unit tests (`npm test`) | 140 passing: detection, env scan, plan advisor, packing, deploy state machine, detectors, RCA board, verify, postmortem, policy, actions, agent loop, domains |
+| Unit tests (`npm test`) | 179 passing: detection, env scan, plan advisor, packing, deploy state machine and verification, detectors, RCA board, verify, postmortem, approvals, policy, actions (launch, rollback), operations, dashboard security, agent loop, redaction, domains |
 | Real Liara API (read-only) | `/v1/me` (42 plans), `/v1/billing`, `/v1/projects`, Liara DNS zones, Liara AI workspaces |
-| MCP end to end (`npm run mcp-smoke`) | preview → changed args blocked → executed → token reuse blocked → elicitation "no" audited with reason → elicitation "yes" executed |
+| MCP end to end (`npm run mcp-smoke`) | request filed → callback before approval not executed → approved with different args blocked → executed → reuse blocked → elicitation "no" audited with reason → elicitation "yes" executed |
 | Dashboard | checked in a browser at desktop and 375 px (no horizontal overflow, no wrapped buttons) |
 
 Demo app ("Broken Shop") run locally with real traffic and real logs (`npm run scenario -- <fault>`):
@@ -221,7 +226,7 @@ Live runs against a deployed app on Liara are added here after the first deploy.
 
 ```
 core/            Liara client, detection, env scan, plan advisor, packer, deployer,
-                 policy (tiers, tokens, audit), actions, domain logic, agent loop, shared ops
+                 policy (tiers, rate limits, audit), approvals, operations, actions, domain logic, agent loop, shared ops
 core/sre/        snapshot collector, log clustering, detectors, RCA board, verify, postmortem
 mcp/server.ts    MCP server (21 tools)
 web/             dashboard server and RTL UI

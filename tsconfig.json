@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["core", "mcp", "scripts", "web/server.ts"]
+  "include": ["core", "mcp", "scripts", "web/server.ts", "web/security.ts", "web/security.test.ts"]
 }

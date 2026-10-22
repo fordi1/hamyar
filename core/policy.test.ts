@@ -6,10 +6,13 @@ import { Policy, PolicyError } from './policy.js';
 
 function policy(mode: 'observe' | 'review' | 'auto-safe' = 'review', start = 1_000_000) {
   let now = start;
-  const auditPath = join(mkdtempSync(join(tmpdir(), 'hamyar-audit-')), 'audit.jsonl');
-  const p = new Policy({ mode, auditPath, now: () => now });
-  return { p, auditPath, advance: (ms: number) => (now += ms) };
+  const dir = mkdtempSync(join(tmpdir(), 'hamyar-policy-'));
+  const auditPath = join(dir, 'audit.jsonl');
+  const p = new Policy({ mode, auditPath, approvalsPath: join(dir, 'approvals.json'), now: () => now });
+  return { p, auditPath, dir, advance: (ms: number) => (now += ms) };
 }
+
+const executed = (p: Policy, tool: string, app = 'shop') => p.audit({ tool, tier: 'T2', args: { app }, outcome: 'executed' });
 
 describe('approval requirements by mode', () => {
   it('review: T0 runs, T1 and T2 need approval', () => {
@@ -37,47 +40,19 @@ describe('approval requirements by mode', () => {
   });
 });
 
-describe('confirm tokens', () => {
-  it('accepts a token only for the exact same tool and arguments, once', () => {
+describe('kill switch', () => {
+  it('revokes pending approvals and audits it', () => {
     const { p } = policy();
-    const { token } = p.issue('resize_plan', { app: 'shop', planID: 'medium-g2' });
-    expect(() => p.consume('resize_plan', { app: 'shop', planID: 'pro-g2' }, token)).toThrow(/آرگومان/);
-    expect(() => p.consume('restart_app', { app: 'shop', planID: 'medium-g2' }, token)).toThrow();
-    expect(() => p.consume('resize_plan', { planID: 'medium-g2', app: 'shop' }, token)).not.toThrow();
-    expect(() => p.consume('resize_plan', { app: 'shop', planID: 'medium-g2' }, token)).toThrow(/استفاده شده/);
-  });
-
-  it('binds nested argument values too', () => {
-    const { p } = policy();
-    const { token } = p.issue('set_env', { app: 'shop', variables: [{ key: 'A', value: '1' }] });
-    expect(() => p.consume('set_env', { app: 'shop', variables: [{ key: 'A', value: '2' }] }, token)).toThrow(/آرگومان/);
-    expect(() => p.consume('set_env', { app: 'shop', variables: [{ value: '1', key: 'A' }] }, token)).not.toThrow();
-  });
-
-  it('expires after 10 minutes', () => {
-    const { p, advance } = policy();
-    const { token } = p.issue('restart_app', { app: 'shop' });
-    advance(10 * 60_000 + 1);
-    expect(() => p.consume('restart_app', { app: 'shop' }, token)).toThrow(/منقضی/);
-  });
-
-  it('rejects unknown tokens', () => {
-    const { p } = policy();
-    expect(() => p.consume('restart_app', { app: 'shop' }, 'nope')).toThrow(PolicyError);
-  });
-
-  it('revokeAll invalidates outstanding tokens (kill switch)', () => {
-    const { p } = policy();
-    const { token } = p.issue('restart_app', { app: 'shop' });
-    p.revokeAll();
-    expect(() => p.consume('restart_app', { app: 'shop' }, token)).toThrow();
+    p.approvals.request({ tool: 'restart_app', tier: 'T1', args: { app: 'shop' }, preview: { title: 't', lines: [], risk: '', downtime: '', undo: '' }, source: 'mcp' });
+    expect(p.revokeAll()).toBe(1);
+    expect(p.recent().at(-1)).toMatchObject({ outcome: 'revoked' });
   });
 });
 
-describe('rate limits', () => {
+describe('rate limits from the shared audit log', () => {
   it('allows at most 3 deploys per 10 minutes', () => {
     const { p, advance } = policy();
-    for (let i = 0; i < 3; i++) p.assertRate('deploy', 'shop');
+    for (let i = 0; i < 3; i++) executed(p, 'deploy');
     expect(() => p.assertRate('deploy', 'shop')).toThrow(/دیپلوی/);
     advance(10 * 60_000 + 1);
     expect(() => p.assertRate('deploy', 'shop')).not.toThrow();
@@ -85,15 +60,22 @@ describe('rate limits', () => {
 
   it('allows one restart per app every 5 minutes', () => {
     const { p } = policy();
-    p.assertRate('restart_app', 'shop');
+    executed(p, 'restart_app', 'shop');
     expect(() => p.assertRate('restart_app', 'shop')).toThrow(/ری‌استارت/);
     expect(() => p.assertRate('restart_app', 'other')).not.toThrow();
   });
 
   it('caps write actions at 10 per hour', () => {
     const { p } = policy();
-    for (let i = 0; i < 10; i++) p.assertRate('set_env', `app${i}`);
+    for (let i = 0; i < 10; i++) executed(p, 'set_env', `app${i}`);
     expect(() => p.assertRate('set_env', 'app99')).toThrow(/ساعت/);
+  });
+
+  it('counts executions made by another process writing the same audit log', () => {
+    const { p, auditPath, dir } = policy();
+    const other = new Policy({ auditPath, approvalsPath: join(dir, 'approvals.json'), now: () => 1_000_000 });
+    executed(other, 'restart_app', 'shop');
+    expect(() => p.assertRate('restart_app', 'shop')).toThrow(/ری‌استارت/);
   });
 });
 

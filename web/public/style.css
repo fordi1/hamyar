@@ -453,3 +453,8 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .conversation.is-empty > .composer { position: static; padding: 14px; margin-top: 4px; }
 .conversation.is-empty > .composer textarea { min-height: 72px; font-size: 16px; }
 .conversation.is-empty > .composer .send { min-height: 48px; }
+
+.sprite { position: absolute; }
+.app-name { min-width: 0; }
+
+.badge.source { background: var(--card-2); color: var(--text-2); }

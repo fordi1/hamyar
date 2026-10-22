@@ -16,12 +16,14 @@ const TOOL_LABELS = {
   rollback: 'برگشت به نسخه‌ی قبلی', add_domain: 'اتصال دامنه', enable_ssl: 'فعال‌سازی SSL',
   use_liara_dns: 'راه‌اندازی DNS لیارا', create_dns_records: 'ساخت رکوردهای DNS',
 };
-const PHASES = ['packing', 'uploading', 'queued', 'building', 'deploying', 'ready', 'probing', 'done'];
+// Deploy states from core/deployer.ts, in order (terminal states end the bar).
+const PHASES = ['PREPARING', 'UPLOADING', 'BUILDING', 'DEPLOYING', 'VERIFYING', 'VERIFIED_HEALTHY'];
 const PHASE_LABELS = {
-  packing: 'بسته‌بندی کد', uploading: 'آپلود', queued: 'در صف ساخت', building: 'ساخت (build)', deploying: 'استقرار',
-  ready: 'آماده', failed: 'ناموفق', probing: 'تست سایت', done: 'تمام',
+  ANALYZING: 'تحلیل پروژه', AWAITING_APPROVAL: 'منتظر تأیید شما', PREPARING: 'آماده‌سازی و بسته‌بندی', UPLOADING: 'آپلود',
+  BUILDING: 'ساخت (build)', DEPLOYING: 'استقرار', VERIFYING: 'بررسی سلامت', VERIFIED_HEALTHY: 'سالم و تأییدشده',
+  HEALTH_FAILED: 'بررسی سلامت رد شد', FAILED: 'ناموفق', CANCELED: 'لغو شد',
 };
-const OUTCOMES = { executed: 'انجام شد', failed: 'ناموفق', rejected: 'رد شد', blocked: 'مسدود شد' };
+const OUTCOMES = { executed: 'انجام شد', approved: 'تأیید شد', failed: 'ناموفق', rejected: 'رد شد', blocked: 'مسدود شد', revoked: 'لغو شد' };
 const MODES = {
   observe: ['فقط مشاهده', 'هیچ تغییری اجرا نمی‌شود'],
   review: ['بازبینی', 'هر تغییر قبل از اجرا تأیید شما را می‌خواهد'],
@@ -211,7 +213,7 @@ function stepProgress(name, phase, message) {
   const step = findStep(name);
   step.el.className = 'step running';
   step.el.querySelector('.state').textContent = fa(step.run.steps.indexOf(step) + 1);
-  step.el.querySelector('small').textContent = `${PHASE_LABELS[phase] || phase}${message && phase === 'uploading' ? ` · ${message}` : ''}`;
+  step.el.querySelector('small').textContent = `${PHASE_LABELS[phase] || phase}${message && (phase === 'UPLOADING' || phase === 'HEALTH_FAILED') ? ` · ${message}` : ''}`;
   let bar = step.el.querySelector('.progress');
   if (!bar) {
     bar = document.createElement('div');
@@ -307,10 +309,13 @@ function verifyView(v) {
 // ---------- approval card ----------
 
 function approvalCard(req) {
-  stepWaiting(req.tool);
+  if (document.querySelector(`.approval[data-id="${req.id}"]`)) return;
+  if (openSteps.some((s) => s.name === req.tool)) stepWaiting(req.tool);
+  hideWelcome();
   const p = req.preview;
   const el = document.createElement('section');
   el.className = `approval ${req.tier === 'T1' ? 't1' : 't2'}`;
+  el.dataset.id = req.id;
   el.setAttribute('aria-label', 'درخواست تأیید');
   const fact = (cls, ic, label, value) => (value ? `<div class="fact ${cls}">${icon(ic)}<div><span>${label}</span><b>${esc(value)}</b></div></div>` : '');
   const secrets = (req.needsValues || [])
@@ -347,7 +352,10 @@ function approvalCard(req) {
     el.querySelectorAll('button, input').forEach((b) => (b.disabled = true));
     const res = await api('/api/approve', { method: 'POST', body: { id: req.id, approved, reason, values } }).catch(() => null);
     el.querySelectorAll('input[data-key]').forEach((i) => (i.value = ''));
-    if (!res || !res.ok) return markDecided(el, false, 'این درخواست دیگر معتبر نیست.');
+    if (!res || !res.ok) {
+      const why = res ? (await res.json().catch(() => ({}))).error : null;
+      return markDecided(el, false, why || 'این درخواست دیگر معتبر نیست.');
+    }
     markDecided(el, approved, approved ? 'تأیید شد؛ در حال اجرا' : `رد شد${reason ? `: ${reason}` : ''}`);
     if (approved) stepRunning(req.tool, 'تأیید شد؛ در حال اجرا');
   };
@@ -486,7 +494,7 @@ async function loadStatus() {
     const lastCpu = s.cpu.length ? s.cpu[s.cpu.length - 1].v : 0;
     card.innerHTML = `
       <div class="app-head">
-        <div style="min-width:0"><h2>${esc(s.app)}</h2>
+        <div class="app-name"><h2>${esc(s.app)}</h2>
           <a class="app-url" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url.replace('https://', ''))}${icon('link')}</a></div>
         <span class="pill" data-state="${off ? 'off' : healthy ? 'ok' : 'bad'}"><span class="dot"></span>${off ? 'خاموش' : healthy ? 'سالم' : 'مشکل دارد'}</span>
       </div>
@@ -623,6 +631,46 @@ $('#stop-btn').onclick = async () => {
   toast('همه‌ی تأییدهای در انتظار لغو شد؛ هیچ عملیاتی اجرا نمی‌شود.');
 };
 
+// ---------- persisted approvals and operations (survive refresh and restart) ----------
+
+const SOURCE_LABEL = { mcp: 'درخواست از Claude Code', dashboard: 'درخواست از همین داشبورد' };
+
+async function loadInbox() {
+  try {
+    const list = await (await api('/api/approvals')).json();
+    for (const r of list) {
+      if (document.querySelector(`.approval[data-id="${r.id}"]`)) continue;
+      approvalCard(r);
+      const head = document.querySelector(`.approval[data-id="${r.id}"] .approval-head`);
+      if (head) head.insertAdjacentHTML('beforeend', `<span class="badge source">${esc(SOURCE_LABEL[r.source] || r.source)} · ${esc(r.id)}</span>`);
+    }
+  } catch {}
+}
+
+const opSteps = new Map();
+
+async function loadOperations() {
+  try {
+    const { active, recent } = await (await api('/api/operations')).json();
+    for (const op of active) {
+      if (opSteps.has(op.id) || openSteps.some((s) => s.name === op.tool)) continue;
+      ensureRun();
+      const step = stepStart(op.tool, { app: op.app });
+      opSteps.set(op.id, step);
+      if (op.state && op.state !== 'RUNNING') stepProgress(op.tool, op.state, op.events.at(-1)?.message);
+      finishRun();
+    }
+    for (const [id, step] of opSteps) {
+      const op = [...active, ...recent].find((o) => o.id === id);
+      if (!op) continue;
+      if (op.finished && openSteps.includes(step)) {
+        const ok = ['VERIFIED_HEALTHY', 'DONE'].includes(op.state);
+        stepEnd(op.tool, ok ? 'done' : 'error', op.summary || PHASE_LABELS[op.state] || op.state);
+      } else if (!op.finished && op.state !== 'RUNNING') stepProgress(op.tool, op.state, op.events.at(-1)?.message);
+    }
+  } catch {}
+}
+
 async function init() {
   try {
     const config = await (await api('/api/config')).json();
@@ -641,6 +689,14 @@ async function init() {
     if (!apps.length) setHealth('unknown', 'بدون برنامه');
     loadStatus();
     loadTimeline();
+    // requests filed by Claude Code and operations in flight appear here too
+    loadInbox();
+    loadOperations();
+    clearInterval(state.syncTimer);
+    state.syncTimer = setInterval(() => {
+      loadInbox();
+      loadOperations();
+    }, 5000);
   } catch (err) {
     if (err.message !== 'login required') addMessage('error', esc(`خطا در بارگذاری: ${err.message}`));
   }

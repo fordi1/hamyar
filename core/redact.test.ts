@@ -28,6 +28,18 @@ describe('redactor', () => {
     expect(r.unmask(masked)).toBe('from ali@example.com to ali@example.com');
   });
 
+  it('masks common API key formats and key=value secrets', () => {
+    const r = createRedactor();
+    const out = r.mask(
+      'openai sk-proj-abcdefghijklmnopqrstuvwx box box-ai-0000aaaa1111bbbb2222cccc3333dddd gh ghp_abcdefghijklmnopqrstuvwxyz0123456789 ' +
+        'aws AKIAIOSFODNN7EXAMPLE cfg api_key=hunter2hunter2 password: s3cretpass',
+    );
+    for (const leaked of ['sk-proj-abcdef', 'box-ai-d1af', 'ghp_abcdef', 'AKIAIOSFODNN7EXAMPLE', 'hunter2hunter2', 's3cretpass']) {
+      expect(out).not.toContain(leaked);
+    }
+    expect(out).toContain('api_key=');
+  });
+
   it('ignores very short known values to avoid masking common words', () => {
     const r = createRedactor(['1', 'on']);
     expect(r.mask('port 1 is on')).toBe('port 1 is on');

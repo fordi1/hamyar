@@ -4,11 +4,15 @@
 import { readFileSync } from 'node:fs';
 import type { LiaraClient } from './liara-client.js';
 import { Policy, PolicyError, type Tier } from './policy.js';
+import { ApprovalError } from './approvals.js';
 import { toPlanList } from './plan-advisor.js';
 import { detectProject } from './detect.js';
 import { listFiles } from './pack.js';
-import { appUrl, deploySource, type DeployEvent } from './deployer.js';
+import { appUrl, deploySource, verifyDeployment, waitForRelease, type DeployEvent, type VerifyDeps } from './deployer.js';
+import { LiaraError } from './liara-client.js';
 import { registrarHint, requiredRecords, splitDomain } from './domain.js';
+import { findHealthPath, healthCheckFor } from './analyze.js';
+import { scanEnv } from './env-scan.js';
 
 export interface Preview {
   title: string;
@@ -22,7 +26,7 @@ export interface Preview {
 interface ActionDef {
   tier: Tier;
   preview(client: LiaraClient, args: any): Promise<Preview>;
-  execute(client: LiaraClient, args: any, onEvent: (e: DeployEvent) => void): Promise<unknown>;
+  execute(client: LiaraClient, args: any, onEvent: (e: DeployEvent) => void, deps?: VerifyDeps): Promise<unknown>;
 }
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
@@ -76,6 +80,25 @@ async function recordsFor(c: LiaraClient, app: string, domain: string) {
   if (!d) throw new Error(`دامنه‌ی ${domain} هنوز به ${app} اضافه نشده؛ اول add_domain را اجرا کنید.`);
   const check = await c.checkDomain(d._id).catch(() => ({}) as any);
   return requiredRecords(domain, { CNameRecord: check?.domain?.CNameRecord ?? d.CNameRecord, verificationCode: check?.domain?.verificationCode });
+}
+
+// Health check sent with the release (Liara keeps the old release serving until it passes)
+// and the path our own verification probes. HAMYAR_HEALTHCHECK=off disables sending it.
+function healthFor(dir: string, port: number): { healthPath: string; healthCheck?: ReturnType<typeof healthCheckFor> } {
+  const path = findHealthPath(dir);
+  if (!path) return { healthPath: '/' };
+  return { healthPath: path, ...(process.env.HAMYAR_HEALTHCHECK === 'off' ? {} : { healthCheck: healthCheckFor(port, path) }) };
+}
+
+// Validates a rollback target against the real release history before anything runs.
+async function rollbackTarget(c: LiaraClient, app: string, releaseID: string) {
+  const { releases = [], currentRelease } = await c.releases(app, 20);
+  const target = releases.find((r: any) => r._id === releaseID);
+  let problem: string | undefined;
+  if (!target) problem = `نسخه‌ی ${releaseID} در ۲۰ نسخه‌ی اخیر ${app} پیدا نشد.`;
+  else if (releaseID === currentRelease) problem = `نسخه‌ی ${releaseID} همین الان نسخه‌ی فعلی است؛ برگشت معنی ندارد.`;
+  else if (target.state !== 'READY') problem = `نسخه‌ی ${releaseID} سالم ساخته نشده (وضعیت ${target.state})؛ برگشت به آن امن نیست.`;
+  return { target, current: currentRelease as string | undefined, problem };
 }
 
 async function planInfo(client: LiaraClient, planID: string) {
@@ -159,20 +182,49 @@ export const ACTIONS: Record<string, ActionDef> = {
   rollback: {
     tier: 'T2',
     async preview(c, { app, releaseID }) {
-      const { releases = [], currentRelease } = await c.releases(app, 10);
-      const target = releases.find((r: any) => r._id === releaseID);
+      const { target, current, problem } = await rollbackTarget(c, app, releaseID);
       return {
         title: `برگشت ${app} به نسخه‌ی ${releaseID}`,
         lines: [
-          `نسخه‌ی فعلی: ${currentRelease ?? '?'}`,
-          `نسخه‌ی مقصد: ${releaseID}${target ? ` (ساخته‌شده ${new Date(target.createdAt).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' })}، وضعیت ${target.state})` : ' (در ۱۰ نسخه‌ی اخیر پیدا نشد)'}`,
+          `نسخه‌ی فعلی: ${current ?? 'نامشخص'}`,
+          target ? `نسخه‌ی مقصد: ${releaseID} — ساخته‌شده ${new Date(target.createdAt).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' })}، وضعیت ${target.state}` : `نسخه‌ی مقصد: ${releaseID}`,
+          ...(problem ? [`⛔ ${problem}`] : []),
+          'روش: اول برگشت مستقیم لیارا؛ اگر لیارا پشتیبانی نکرد، همین نسخه از روی کد ذخیره‌شده‌اش دوباره منتشر می‌شود.',
+          'بعد از برگشت، سلامت سایت با چند دور تست بررسی می‌شود.',
         ],
-        risk: 'تغییرات نسخه‌ی فعلی موقتاً از دسترس خارج می‌شود',
-        downtime: 'بدون قطعی در صورت فعال بودن zero-downtime',
-        undo: 'دیپلوی دوباره‌ی نسخه‌ی فعلی',
+        risk: 'تغییرات نسخه‌ی فعلی تا دیپلوی بعدی از دسترس خارج می‌شود',
+        downtime: 'بدون قطعی (نسخه‌ی فعلی تا آماده شدن نسخه‌ی مقصد کار می‌کند)',
+        undo: current ? `برگشت دوباره به ${current}` : 'دیپلوی دوباره‌ی کد فعلی',
       };
     },
-    execute: (c, { app, releaseID }) => c.rollback(app, releaseID),
+    async execute(c, { app, releaseID }, onEvent, deps) {
+      const { target, current, problem } = await rollbackTarget(c, app, releaseID);
+      if (problem || !target) throw Object.assign(new Error(problem), { explanation: problem });
+      let method: 'native' | 'redeploy' = 'native';
+      let servedRelease = releaseID;
+      onEvent({ phase: 'DEPLOYING', message: 'برگشت مستقیم لیارا' });
+      try {
+        await c.rollback(app, releaseID);
+      } catch (err) {
+        // Native rollback is not in the official spec: only fall back when the endpoint is missing.
+        if (!(err instanceof LiaraError) || ![404, 405].includes(err.status)) throw err;
+        const sourceID = target.sourceID ?? target.source?._id ?? target.source;
+        if (typeof sourceID !== 'string' || target.sourceAvailable === false) {
+          const msg = `لیارا برگشت مستقیم را پشتیبانی نکرد و کد ذخیره‌شده‌ی نسخه‌ی ${releaseID} در دسترس نیست. راه جایگزین: کد سالم قبلی را از پوشه‌ی پروژه دوباره deploy کنید (مثلاً Coding Agent تغییر خراب را برگرداند).`;
+          throw Object.assign(new Error(msg), { explanation: msg });
+        }
+        method = 'redeploy';
+        onEvent({ phase: 'BUILDING', message: 'انتشار دوباره‌ی کد نسخه‌ی مقصد' });
+        servedRelease = await c.createRelease(app, { sourceID, port: target.port, type: target.projectType ?? target.platform ?? target.type, message: `Rollback to ${releaseID} by Hamyar` });
+        const release = await waitForRelease(c, servedRelease, onEvent);
+        if (release.state !== 'READY') return { method, previous: current, releaseID: servedRelease, state: release.state === 'UNHEALTHY' ? 'HEALTH_FAILED' : 'FAILED', release };
+      }
+      onEvent({ phase: 'VERIFYING' });
+      const { healthy, verification } = await verifyDeployment(c, app, servedRelease, '/', deps);
+      const state = healthy ? 'VERIFIED_HEALTHY' : 'HEALTH_FAILED';
+      onEvent({ phase: state, message: verification.reason });
+      return { method, previous: current, target: releaseID, releaseID: servedRelease, state, verification };
+    },
   },
 
   deploy: {
@@ -180,32 +232,38 @@ export const ACTIONS: Record<string, ActionDef> = {
     async preview(c, { app, dir, port }) {
       const d = detectProject(dir);
       const files = listFiles(dir, d.platform).length;
+      const health = healthFor(dir, port ?? d.port);
       const { currentRelease } = await c.releases(app, 1).catch(() => ({ currentRelease: undefined }));
       return {
         title: `انتشار نسخه‌ی جدید ${app}`,
         lines: [
           `پوشه: ${dir}`,
           `پلتفرم: ${d.platform}، پورت: ${port ?? d.port}، ${fa(files)} فایل`,
+          health.healthCheck ? `بررسی سلامت لیارا روی ${health.healthPath}: تا سالم نشود، نسخه‌ی فعلی سرویس می‌دهد` : `بررسی سلامت: بعد از انتشار، همیار ${health.healthPath} را تست می‌کند`,
           ...d.warnings.map((w) => `⚠️ ${w}`),
           currentRelease ? `نسخه‌ی فعلی برای برگشت: ${currentRelease}` : 'این اولین نسخه است.',
         ],
-        risk: 'اگر نسخه‌ی جدید خراب باشد، همیار پیشنهاد برگشت می‌دهد',
-        downtime: 'بدون قطعی (نسخه‌ی قبلی تا آماده شدن نسخه‌ی جدید کار می‌کند)',
+        risk: 'اگر نسخه‌ی جدید سالم نباشد، موفق اعلام نمی‌شود و همیار راه برگشت را پیشنهاد می‌دهد',
+        downtime: 'بدون قطعی (نسخه‌ی قبلی تا آماده و سالم شدن نسخه‌ی جدید کار می‌کند)',
         undo: currentRelease ? `برگشت به ${currentRelease}` : 'خاموش کردن برنامه',
       };
     },
     async execute(c, { app, dir, port, message }, onEvent) {
       const d = detectProject(dir);
-      return deploySource(c, { app, dir, platform: d.platform, port: port ?? d.port, message }, onEvent);
+      const p = port ?? d.port;
+      return deploySource(c, { app, dir, platform: d.platform, port: p, message, ...healthFor(dir, p) }, onEvent);
     },
   },
 
   launch_app: {
     tier: 'T2',
-    async preview(c, { app, dir, planID }) {
+    async preview(c, args) {
+      const { app, dir, planID } = args;
       const d = detectProject(dir);
       const plan = await planInfo(c, planID);
       const balance = await c.balance();
+      const provided = resolveEnvArgs(args).map((v) => v.key);
+      const missing = scanEnv(dir).missing.filter((m) => !m.optional && !provided.includes(m.name)).map((m) => m.name);
       return {
         title: `ساخت برنامه‌ی ${app} و اولین دیپلوی`,
         lines: [
@@ -213,18 +271,33 @@ export const ACTIONS: Record<string, ActionDef> = {
           `پلن: ${planID} — ${fa(plan?.ramGB ?? 0)} گیگ رم، ${fa(plan?.cpu ?? 0)} CPU`,
           `آدرس: ${appUrl(app)}`,
           `موجودی حساب: ${fa(Math.round(balance))} تومان`,
+          ...(provided.length ? [`متغیرهایی که قبل از دیپلوی تنظیم می‌شوند: ${provided.join('، ')} (مقدارها مخفی است)`] : []),
+          ...(missing.length ? [`⚠️ کد این متغیرها را لازم دارد ولی مقداری برایشان داده نشده: ${missing.join('، ')} — احتمالاً سایت بعد از دیپلوی خطا می‌دهد`] : []),
           ...d.warnings.map((w) => `⚠️ ${w}`),
         ],
         cost: `ماهانه حدود ${fa(plan?.monthly ?? 0)} تومان (ساعتی ${fa(Math.round(plan?.hourly ?? 0))} تومان)`,
         risk: 'از موجودی حساب کسر می‌شود',
         downtime: '—',
-        undo: 'خاموش یا حذف برنامه از کنسول لیارا',
+        undo: 'خاموش کردن برنامه با همیار، یا حذف از کنسول لیارا',
       };
     },
-    async execute(c, { app, dir, planID, message }, onEvent) {
+    async execute(c, args, onEvent) {
+      const { app, dir, planID, message } = args;
       const d = detectProject(dir);
+      const variables = resolveEnvArgs(args);
+      onEvent({ phase: 'PREPARING', message: 'ساخت برنامه' });
       await c.createApp({ name: app, planID, platform: d.platform });
-      return deploySource(c, { app, dir, platform: d.platform, port: d.port, message: message ?? 'First deploy by Hamyar' }, onEvent);
+      // From here on the app exists and is billed: never fail silently.
+      try {
+        if (variables.length) await c.updateEnvs(app, variables);
+        const result = await deploySource(c, { app, dir, platform: d.platform, port: d.port, message: message ?? 'First deploy by Hamyar', ...healthFor(dir, d.port) }, onEvent);
+        return { ...result, appCreated: true };
+      } catch (err: any) {
+        const why = err?.explanation ?? err?.message ?? String(err);
+        throw Object.assign(new Error(why), {
+          explanation: `برنامه‌ی ${app} ساخته شد ولی دیپلوی کامل نشد: ${why}. برنامه روی لیارا وجود دارد و هزینه‌ی ساعتی پلن محاسبه می‌شود؛ می‌توانید دوباره deploy کنید یا آن را با turn_off_app (با تأیید) خاموش کنید.`,
+        });
+      }
     },
   },
 
@@ -296,48 +369,64 @@ export const ACTIONS: Record<string, ActionDef> = {
 // ---------- the gate ----------
 
 export type ActionResult =
-  | { status: 'needs_approval'; tier: Tier; preview: Preview; token: string; expiresAt: number }
+  | { status: 'needs_approval'; tier: Tier; preview: Preview; approvalId: string; expiresAt: number }
   | { status: 'done'; result: unknown }
   | { status: 'failed'; error: string }
   | { status: 'blocked'; error: string };
 
+// First call (no approvalId): returns a preview and files a pending approval request.
+// Second call (approvalId): runs only if a human approved that exact request through a
+// trusted channel; the id itself is not a credential.
 export async function runAction(
   ctx: { client: LiaraClient; policy: Policy },
   tool: string,
   args: Record<string, any>,
-  approval?: { token?: string; approvedBy?: string },
+  approval?: { approvalId?: string },
   onEvent: (e: DeployEvent) => void = () => {},
+  source: 'mcp' | 'dashboard' = 'dashboard',
 ): Promise<ActionResult> {
   const { client, policy } = ctx;
   const def = ACTIONS[tool];
   const block = (error: string, tier: Tier = def?.tier ?? 'T3'): ActionResult => {
-    policy.audit({ tool, tier, args, outcome: 'blocked', detail: error });
+    policy.audit({ tool, tier, args, outcome: 'blocked', detail: error, approvalId: approval?.approvalId });
     return { status: 'blocked', error };
   };
   if (!def) return block(`«${tool}» در همیار وجود ندارد. عملیات حذف عمداً پیاده‌سازی نشده است.`);
 
+  let approvedBy = 'auto';
   try {
     policy.assertAllowed(tool, def.tier);
-    if (policy.needsApproval(def.tier) && !approval?.token) {
+    if (policy.needsApproval(def.tier) && !approval?.approvalId) {
       const preview = await def.preview(client, args);
-      const { token, expiresAt } = policy.issue(tool, args);
-      policy.audit({ tool, tier: def.tier, args, outcome: 'previewed' });
-      return { status: 'needs_approval', tier: def.tier, preview, token, expiresAt };
+      const record = policy.approvals.request({ tool, tier: def.tier, args, preview, source });
+      policy.audit({ tool, tier: def.tier, args, outcome: 'previewed', approvalId: record.id });
+      return { status: 'needs_approval', tier: def.tier, preview, approvalId: record.id, expiresAt: record.expiresAt };
     }
-    if (approval?.token) policy.consume(tool, args, approval.token);
+    if (approval?.approvalId) {
+      const record = policy.approvals.consume(approval.approvalId, tool, args);
+      approvedBy = `${record.decidedBy ?? 'user'} (${record.channel})`;
+    }
     policy.assertRate(tool, args.app);
   } catch (err: any) {
-    if (err instanceof PolicyError) return block(err.explanation, def.tier);
+    if (err instanceof PolicyError || err instanceof ApprovalError) return block(err.explanation, def.tier);
     return { status: 'failed', error: err?.explanation ?? err?.message ?? String(err) };
   }
 
+  // Persisted so the dashboard can show it after a refresh and a restart can resume it.
+  const op = policy.operations.start({ tool, app: args.app, approvalId: approval?.approvalId });
+  const track = (e: DeployEvent) => {
+    policy.operations.event(op.id, e);
+    onEvent(e);
+  };
   try {
-    const result = await def.execute(client, args, onEvent);
-    policy.audit({ tool, tier: def.tier, args, outcome: 'executed', approvedBy: approval?.approvedBy ?? (approval?.token ? 'user' : 'auto') });
+    const result: any = await def.execute(client, args, track);
+    policy.audit({ tool, tier: def.tier, args, outcome: 'executed', approvedBy, approvalId: approval?.approvalId });
+    policy.operations.finish(op.id, result?.state ?? 'DONE');
     return { status: 'done', result };
   } catch (err: any) {
     const error = err?.explanation ?? err?.message ?? String(err);
     policy.audit({ tool, tier: def.tier, args, outcome: 'failed', detail: error });
+    policy.operations.finish(op.id, 'FAILED', error);
     return { status: 'failed', error };
   }
 }

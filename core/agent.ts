@@ -3,7 +3,7 @@
 // decision in the UI; tool output is redacted before the model sees it.
 import type { OpsContext } from './ops.js';
 import * as ops from './ops.js';
-import { runAction, type Preview } from './actions.js';
+import { ACTIONS, runAction, type Preview } from './actions.js';
 import type { Tier } from './policy.js';
 import type { DeployEvent } from './deployer.js';
 import { createRedactor } from './redact.js';
@@ -93,6 +93,7 @@ export interface ApprovalDecision {
   approved: boolean;
   reason?: string;
   values?: Record<string, string>;
+  by?: string;
 }
 
 export interface AgentHooks {
@@ -114,48 +115,61 @@ const str = (description: string) => ({ type: 'string', description });
 const appParam = str('Liara app name');
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required });
 
-let approvalSeq = 0;
+// The requestApproval hook is the trust boundary: implementations must resolve it only
+// from a human (the dashboard resolves it from an authenticated /api/approve call).
+// The decision is recorded in the shared approval store before anything executes.
+function recordDecision(ctx: OpsContext, id: string, d: ApprovalDecision) {
+  const rec = ctx.policy.approvals.get(id);
+  if (rec?.status === 'pending') ctx.policy.approvals.decide(id, { approved: d.approved, by: d.by ?? 'user', channel: 'dashboard', reason: d.reason });
+}
 
 async function runChange(ctx: OpsContext, tool: string, args: Record<string, any>, hooks: AgentHooks): Promise<string> {
   const onEvent = (e: DeployEvent) => hooks.onEvent({ type: 'progress', tool, phase: e.phase, message: e.message });
-  const approved = async (realArgs: Record<string, any>) => {
-    // The human already approved in the dashboard card; issue and consume the token server-side.
-    const preview = await runAction(ctx, tool, realArgs, undefined, onEvent);
-    if (preview.status === 'done') return ops.renderDone(tool, preview.result, []);
-    if (preview.status !== 'needs_approval') return `❌ ${preview.error}`;
-    const done = await runAction(ctx, tool, realArgs, { token: preview.token, approvedBy: 'user (dashboard)' }, onEvent);
-    return done.status === 'done' ? ops.renderDone(tool, done.result, []) : `❌ ${'error' in done ? done.error : done.status}`;
-  };
-  const rejected = (tier: Tier, reason?: string) => {
-    ctx.policy.audit({ tool, tier, args, outcome: 'rejected', approvedBy: 'user (dashboard)', detail: reason });
+  const finish = (r: Awaited<ReturnType<typeof runAction>>) =>
+    r.status === 'done' ? ops.renderDone(tool, r.result, []) : `❌ ${'error' in r ? r.error : r.status}`;
+  const rejected = (tier: Tier, id: string, reason?: string) => {
+    ctx.policy.audit({ tool, tier, args, outcome: 'rejected', approvedBy: 'user (dashboard)', approvalId: id, detail: reason });
     return `🚫 کاربر این عملیات را رد کرد. دلیل: ${reason || 'بدون دلیل'}. راه دیگری پیشنهاد بده یا بپرس چه می‌خواهد.`;
   };
 
-  // Secret env values: the model names the keys, the human types the values.
-  if (tool === 'set_env' && Array.isArray(args.keys) && args.keys.length) {
+  // Secret env values (set_env, or a first deploy that needs env vars): the model names
+  // the keys, the human types the values on the approval card.
+  if ((tool === 'set_env' || tool === 'launch_app') && Array.isArray(args.keys) && args.keys.length) {
     const keys: string[] = args.keys;
-    const decision = await hooks.requestApproval({
-      id: `a${++approvalSeq}`, tool, tier: 'T2', needsValues: keys,
-      preview: {
-        title: `تنظیم متغیرهای محیطی ${args.app}`,
-        lines: [...keys.map((k) => `${k}: مقدار را خودتان وارد کنید (به هوش مصنوعی داده نمی‌شود)`), 'متغیرهای فعلی حفظ می‌شوند.'],
-        risk: 'کم', downtime: 'یک ری‌استارت کوتاه', undo: 'تغییر دوباره‌ی مقدار',
-      },
-    });
-    if (!decision.approved) return rejected('T2', decision.reason);
+    const { keys: _keys, ...rest } = args;
+    const valueLines = keys.map((k) => `${k}: مقدار را خودتان وارد کنید (به هوش مصنوعی داده نمی‌شود)`);
+    const preview =
+      tool === 'launch_app'
+        ? await (async () => {
+            const p = await ACTIONS.launch_app.preview(ctx.client, { ...rest, variables: keys.map((k) => ({ key: k, value: '' })) });
+            return { ...p, lines: [...p.lines.filter((l) => !l.startsWith('متغیرهایی که')), ...valueLines] };
+          })()
+        : {
+            title: `تنظیم متغیرهای محیطی ${args.app}`,
+            lines: [...valueLines, 'متغیرهای فعلی حفظ می‌شوند.'],
+            risk: 'کم', downtime: 'یک ری‌استارت کوتاه', undo: 'تغییر دوباره‌ی مقدار',
+          };
+    ctx.policy.assertAllowed(tool, 'T2');
+    const card = ctx.policy.approvals.request({ tool, tier: 'T2', args: { ...rest, keys }, preview, source: 'dashboard' });
+    const decision = await hooks.requestApproval({ id: card.id, tool, tier: 'T2', needsValues: keys, preview });
+    recordDecision(ctx, card.id, decision);
+    if (!decision.approved) return rejected('T2', card.id, decision.reason);
     const missing = keys.filter((k) => !decision.values?.[k]);
     if (missing.length) return `❌ مقدار ${missing.join(', ')} وارد نشد؛ کاری انجام نشد.`;
-    const variables = [...(args.variables ?? []), ...keys.map((k) => ({ key: k, value: decision.values![k] }))];
-    return approved({ app: args.app, variables });
+    // The same human submission (approve + values) authorizes the concrete arguments.
+    const real = { ...rest, variables: [...(args.variables ?? []), ...keys.map((k) => ({ key: k, value: decision.values![k] }))] };
+    const filed = await runAction(ctx, tool, real, undefined, onEvent);
+    if (filed.status !== 'needs_approval') return finish(filed);
+    ctx.policy.approvals.decide(filed.approvalId, { approved: true, by: decision.by ?? 'user', channel: 'dashboard', reason: `مقادیر همراه با تأیید ${card.id}` });
+    return finish(await runAction(ctx, tool, real, { approvalId: filed.approvalId }, onEvent));
   }
 
   const first = await runAction(ctx, tool, args, undefined, onEvent);
-  if (first.status === 'done') return ops.renderDone(tool, first.result, []);
-  if (first.status !== 'needs_approval') return `❌ ${first.error}`;
-  const decision = await hooks.requestApproval({ id: `a${++approvalSeq}`, tool, tier: first.tier, preview: first.preview });
-  if (!decision.approved) return rejected(first.tier, decision.reason);
-  const done = await runAction(ctx, tool, args, { token: first.token, approvedBy: 'user (dashboard)' }, onEvent);
-  return done.status === 'done' ? ops.renderDone(tool, done.result, []) : `❌ ${'error' in done ? done.error : done.status}`;
+  if (first.status !== 'needs_approval') return finish(first);
+  const decision = await hooks.requestApproval({ id: first.approvalId, tool, tier: first.tier, preview: first.preview });
+  recordDecision(ctx, first.approvalId, decision);
+  if (!decision.approved) return rejected(first.tier, first.approvalId, decision.reason);
+  return finish(await runAction(ctx, tool, args, { approvalId: first.approvalId }, onEvent));
 }
 
 export function buildTools(ctx: OpsContext): AgentTool[] {
@@ -190,7 +204,8 @@ export function buildTools(ctx: OpsContext): AgentTool[] {
     read('incident_report', 'Persian postmortem of the last diagnose and the actions since.', obj({ app: appParam }, ['app']), (a) => ops.incidentReportText(ctx, a.app)),
     read('audit_log', 'Latest actions with approvals.', obj({ limit: { type: 'number' } }), async (a) => ops.auditText(ctx, a.limit ?? 20)),
 
-    change('launch_app', 'Create an app on a plan and deploy a folder for the first time.', obj({ app: appParam, dir: str('Project folder'), planID: str('Plan id from analyze_project') }, ['app', 'dir', 'planID'])),
+    change('launch_app', 'Create an app on a plan and deploy a folder for the first time. Pass the env var NAMES the code needs (from analyze_project) in `keys`; the user types the values on the approval card before the deploy.',
+      obj({ app: appParam, dir: str('Project folder'), planID: str('Plan id from analyze_project'), keys: { type: 'array', items: { type: 'string' } } }, ['app', 'dir', 'planID'])),
     change('deploy', 'Deploy a new version of a folder to an existing app.', obj({ app: appParam, dir: str('Project folder'), port: { type: 'number' } }, ['app', 'dir'])),
     change('set_env', 'Set environment variables. Pass only key NAMES in `keys`; the user types the values in the dashboard. Use `variables` only for clearly non-secret values.',
       obj({ app: appParam, keys: { type: 'array', items: { type: 'string' } }, variables: { type: 'array', items: obj({ key: { type: 'string' }, value: { type: 'string' } }, ['key', 'value']) } }, ['app'])),
@@ -227,9 +242,11 @@ export async function runAgent(opts: {
   hooks: AgentHooks;
   maxSteps?: number;
   system?: string;
+  // e.g. the selected app's env values: masked wherever they appear in tool output
+  knownSecrets?: string[];
 }): Promise<ChatMessage[]> {
   const { llm, tools, hooks } = opts;
-  const redactor = createRedactor();
+  const redactor = createRedactor(opts.knownSecrets);
   const specs: ToolSpec[] = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
   const messages: ChatMessage[] = [{ role: 'system', content: opts.system ?? SYSTEM_PROMPT }, ...opts.history, { role: 'user', content: opts.userMessage }];
   const maxSteps = opts.maxSteps ?? 10;

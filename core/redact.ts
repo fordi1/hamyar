@@ -8,6 +8,10 @@ export interface Redactor {
 
 const RULES: { kind: string; re: RegExp; group?: number }[] = [
   { kind: 'JWT', re: /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+/g },
+  // provider API keys: OpenAI-style, boxapi, GitHub, AWS access keys, Slack
+  { kind: 'KEY', re: /\b(?:sk-[A-Za-z0-9_-]{16,}|box-ai-[A-Fa-f0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[abpr]-[A-Za-z0-9-]{10,})/g },
+  // values after secret-looking names: api_key=..., password: ..., token="..."
+  { kind: 'SECRET', re: /(?<=\b(?:api[_-]?key|secret|password|passwd|token|auth)["']?\s*[:=]\s*["']?)[^\s"',;&]{6,}/gi },
   { kind: 'TOKEN', re: /(?<=Bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi },
   // password part of scheme://user:password@host
   { kind: 'PASSWORD', re: /(?<=[a-z+]+:\/\/[^:@/\s]+:)[^@\s]+(?=@)/gi },

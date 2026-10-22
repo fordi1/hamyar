@@ -23,6 +23,21 @@ export interface OpsContext {
 
 const fa = (n: number) => n.toLocaleString('fa-IR');
 
+// The app's env values, used only to mask them out of anything sent to a model.
+const secretCache = new Map<string, { at: number; values: string[] }>();
+export async function secretValues({ client }: OpsContext, app?: string): Promise<string[]> {
+  if (!app) return [];
+  const hit = secretCache.get(app);
+  if (hit && Date.now() - hit.at < 60_000) return hit.values;
+  try {
+    const values = ((await client.getApp(app)).envs ?? []).map((e: any) => String(e.value ?? '')).filter((v: string) => v.length >= 4);
+    secretCache.set(app, { at: Date.now(), values });
+    return values;
+  } catch {
+    return [];
+  }
+}
+
 export async function overview({ client, policy }: OpsContext): Promise<string> {
   const [balance, apps] = await Promise.all([client.balance(), client.listApps()]);
   const lines = [
@@ -225,19 +240,40 @@ export function renderPreview(p: Preview, tier: string): string {
 export function renderDone(tool: string, result: any, events: DeployEvent[]): string {
   if (tool === 'deploy' || tool === 'launch_app') {
     const phases = [...new Set(events.map((e) => e.phase))].join(' → ');
-    const lines = [`مراحل: ${phases}`];
-    if (result?.release?.state === 'READY') {
-      lines.unshift(`✅ نسخه‌ی ${result.releaseID} منتشر شد: ${result.url}`);
-      if (result.probe) {
-        lines.push(`تست سایت: ${fa(Math.round(result.probe.okRatio * 100))}٪ موفق، p95=${fa(result.probe.p95)}ms ${result.probe.healthy ? '✅' : '⚠️ سایت سالم به نظر نمی‌رسد؛ diagnose را اجرا کنید'}`);
+    const v = result?.verification;
+    const measured = v ? `${fa(Math.round(v.okRatio * 100))}٪ درخواست موفق در ${fa(v.rounds)} دور تست، p95=${fa(v.p95)}ms (${v.url})` : '';
+    const lines: string[] = [];
+    switch (result?.state) {
+      case 'VERIFIED_HEALTHY':
+        lines.push(`✅ نسخه‌ی ${result.releaseID} منتشر شد و سلامتش تأیید شد: ${result.url}`, `بررسی سلامت: ${measured}`);
+        break;
+      case 'HEALTH_FAILED':
+        lines.push(
+          `⚠️ نسخه‌ی ${result.releaseID} ساخته شد ولی بررسی سلامت رد شد؛ موفق حساب نمی‌شود.`,
+          v?.reason ?? result.release?.failReason ?? 'لیارا بررسی سلامت این نسخه را ناموفق اعلام کرد؛ نسخه‌ی قبلی (اگر بود) سرویس می‌دهد.',
+          ...(measured ? [`اندازه‌گیری: ${measured}`] : []),
+          'برای پیدا کردن علت diagnose را اجرا کنید، یا به نسخه‌ی قبلی برگردید.',
+        );
+        break;
+      case 'CANCELED':
+        lines.push(`⏹ ساخت نسخه‌ی ${result.releaseID} لغو شد.`);
+        break;
+      default: {
+        lines.push(`❌ ساخت یا انتشار نسخه‌ی ${result?.releaseID ?? ''} ناموفق بود${result?.release?.failReason ? `: ${result.release.failReason}` : ''}.`);
+        const tail = result?.release?.lastLines?.slice(-8) ?? [];
+        if (tail.length) lines.push('آخرین خطوط build:', ...tail.map((l: string) => `  ${l}`));
+        lines.push('برای پیدا کردن علت، diagnose را اجرا کنید.');
       }
-    } else {
-      lines.unshift(`❌ انتشار نسخه‌ی ${result?.releaseID ?? ''} با وضعیت ${result?.release?.state} تمام شد${result?.release?.failReason ? `: ${result.release.failReason}` : ''}`);
-      const tail = result?.release?.lastLines?.slice(-8) ?? [];
-      if (tail.length) lines.push('آخرین خطوط build:', ...tail.map((l: string) => `  ${l}`));
-      lines.push('برای پیدا کردن علت، diagnose را اجرا کنید.');
     }
+    if (phases) lines.push(`مراحل: ${phases}`);
     return lines.join('\n');
+  }
+  if (tool === 'rollback') {
+    const how = result?.method === 'redeploy' ? 'با انتشار دوباره‌ی کد ذخیره‌شده‌ی آن نسخه (لیارا برگشت مستقیم را پشتیبانی نکرد)' : 'با برگشت مستقیم لیارا';
+    const v = result?.verification;
+    const measured = v ? ` — ${fa(Math.round(v.okRatio * 100))}٪ درخواست موفق، p95=${fa(v.p95)}ms` : '';
+    if (result?.state === 'VERIFIED_HEALTHY') return `✅ برنامه به نسخه‌ی ${result.target} برگشت ${how} و سلامتش تأیید شد${measured}.`;
+    return `⚠️ برگشت ${how} انجام شد ولی سلامت سایت تأیید نشد${measured}. ${v?.reason ?? ''} diagnose را اجرا کنید.`;
   }
   if (tool === 'set_env') {
     return `✅ متغیرها ذخیره شدند (اضافه: ${result?.added?.join(', ') || '—'}، تغییر: ${result?.changed?.join(', ') || '—'}). لیارا برنامه را ری‌استارت می‌کند؛ بعد از چند ثانیه verify را اجرا کنید.`;

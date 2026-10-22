@@ -21,7 +21,7 @@ describe('waitForRelease', () => {
     ]);
     const result = await waitForRelease(client, 'r1', (e) => events.push(e), { intervalMs: 1 });
     expect(result.state).toBe('READY');
-    expect(events.map((e) => e.phase)).toEqual(['building', 'building', 'deploying', 'ready']);
+    expect(events.map((e) => e.phase)).toEqual(['BUILDING', 'BUILDING', 'DEPLOYING']);
     expect(result.lastLines).toContain('added 60 packages');
   });
 
@@ -67,5 +67,89 @@ describe('summarizeProbe', () => {
   it('counts network errors as failures', () => {
     const s = summarizeProbe([{ status: 0, ms: 5000, error: 'timeout' }, { status: 200, ms: 50 }]);
     expect(s.okRatio).toBe(0.5);
+  });
+});
+
+// ---------- deploySource state machine ----------
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { deploySource, verifyDeployment, type VerifyDeps } from './deployer.js';
+
+function projectDir() {
+  const dir = mkdtempSync(join(tmpdir(), 'hamyar-deploy-'));
+  writeFileSync(join(dir, 'server.js'), 'require("http").createServer().listen(3000)');
+  return dir;
+}
+
+function liara(releaseState: string, currentRelease = 'r-new') {
+  const created: any[] = [];
+  return {
+    created,
+    client: {
+      uploadSource: async () => 'src1',
+      createRelease: async (_app: string, body: any) => { created.push(body); return 'r-new'; },
+      buildLogs: async () => ({ release: { state: releaseState, failReason: releaseState === 'FAILED' ? 'npm ERR' : undefined }, buildOutput: [] }),
+      releases: async () => ({ currentRelease }),
+    } as any,
+  };
+}
+
+const probes = (status: number, ms = 40): VerifyDeps => ({
+  probe: async () => summarizeProbe([{ status, ms }, { status, ms }, { status, ms }]),
+  sleep: async () => {},
+  rounds: 3,
+});
+
+const input = (dir: string) => ({ app: 'shop', dir, platform: 'node', port: 3000, healthPath: '/health', healthCheck: { command: 'CMD curl --fail http://localhost:3000/health || exit 1', interval: 30, timeout: 15, retries: 2, startPeriod: 5 } });
+
+describe('deploySource', () => {
+  it('reports VERIFIED_HEALTHY only after verification passes and Liara serves the new release', async () => {
+    const { client } = liara('READY');
+    const events: DeployEvent[] = [];
+    const r = await deploySource(client, input(projectDir()), (e) => events.push(e), probes(200));
+    expect(r.state).toBe('VERIFIED_HEALTHY');
+    expect(r.verification).toMatchObject({ okRatio: 1, rounds: 3, url: 'https://shop.liara.run/health' });
+    expect(events.map((e) => e.phase)).toEqual(['PREPARING', 'UPLOADING', 'BUILDING', 'VERIFYING', 'VERIFIED_HEALTHY']);
+  });
+
+  it('a READY release whose site fails our probes is HEALTH_FAILED, not success', async () => {
+    const { client } = liara('READY');
+    const r = await deploySource(client, input(projectDir()), () => {}, probes(500));
+    expect(r.state).toBe('HEALTH_FAILED');
+    expect(r.verification?.reason).toMatch(/موفق/);
+  });
+
+  it('a READY release that Liara does not serve yet is HEALTH_FAILED', async () => {
+    const { client } = liara('READY', 'r-old');
+    const r = await deploySource(client, input(projectDir()), () => {}, probes(200));
+    expect(r.state).toBe('HEALTH_FAILED');
+    expect(r.verification?.reason).toContain('r-old');
+  });
+
+  it('maps Liara UNHEALTHY to HEALTH_FAILED and FAILED to FAILED without probing', async () => {
+    let probed = 0;
+    const deps: VerifyDeps = { ...probes(200), probe: async () => { probed++; return summarizeProbe([]); } };
+    expect((await deploySource(liara('UNHEALTHY').client, input(projectDir()), () => {}, deps)).state).toBe('HEALTH_FAILED');
+    expect((await deploySource(liara('FAILED').client, input(projectDir()), () => {}, deps)).state).toBe('FAILED');
+    expect((await deploySource(liara('CANCELED').client, input(projectDir()), () => {}, deps)).state).toBe('CANCELED');
+    expect(probed).toBe(0);
+  });
+
+  it('sends the health check with the command split on spaces, like the Liara CLI', async () => {
+    const { client, created } = liara('READY');
+    await deploySource(client, input(projectDir()), () => {}, probes(200));
+    expect(created[0].healthCheck.command).toEqual(['CMD', 'curl', '--fail', 'http://localhost:3000/health', '||', 'exit', '1']);
+    expect(created[0].healthCheck).toMatchObject({ interval: 30, timeout: 15, retries: 2, startPeriod: 5 });
+  });
+});
+
+describe('verifyDeployment', () => {
+  it('probes the given path in several rounds', async () => {
+    const urls: string[] = [];
+    const deps: VerifyDeps = { probe: async (u) => { urls.push(u); return summarizeProbe([{ status: 200, ms: 10 }]); }, sleep: async () => {}, rounds: 3 };
+    const { healthy } = await verifyDeployment({ releases: async () => ({ currentRelease: 'r1' }) } as any, 'shop', 'r1', '/health', deps);
+    expect(healthy).toBe(true);
+    expect(urls).toEqual(Array(3).fill('https://shop.liara.run/health'));
   });
 });

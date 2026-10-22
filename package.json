@@ -19,7 +19,8 @@
     "web": "tsx web/server.ts",
     "demo": "tsx scripts/demo.ts",
     "preflight": "tsx scripts/preflight.ts",
-    "chat": "tsx scripts/agent-chat.ts"
+    "chat": "tsx scripts/agent-chat.ts",
+    "approve": "tsx scripts/approve.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

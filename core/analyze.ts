@@ -40,7 +40,7 @@ function dependencies(dir: string): string[] {
 
 // A dedicated health route; probing `/` would mark a release unhealthy whenever the
 // home page itself fails (for example on a missing DATABASE_URL).
-function findHealthPath(dir: string, files: string[]): string | undefined {
+export function findHealthPath(dir: string, files: string[] = listFiles(dir, detectProject(dir).platform)): string | undefined {
   for (const file of files.filter((f) => /\.(js|ts|mjs|cjs|py|php|go)$/.test(f))) {
     const text = readFileSync(join(dir, file), 'utf8');
     const m = text.match(/['"](\/(?:health|healthz|ping|status))['"]/);
@@ -49,19 +49,21 @@ function findHealthPath(dir: string, files: string[]): string | undefined {
   return undefined;
 }
 
+// Exactly the format and values of Liara's documented example (docs: paas/details/health-check):
+// curl is installed on every Liara platform. The docs state the timings in ms but use
+// 30/15/5, so we copy the example values rather than guess the unit.
+export function healthCheckFor(port: number, healthPath: string) {
+  return { command: `CMD curl --fail http://localhost:${port}${healthPath} || exit 1`, interval: 30, timeout: 15, retries: 2, startPeriod: 5 };
+}
+
 export function buildLiaraJson(app: string, d: Detection, healthPath?: string): Record<string, unknown> {
-  const url = `http://localhost:${d.port}${healthPath}`;
-  // Node images may lack curl, so node apps check themselves with node's fetch.
-  const command = ['node', 'next'].includes(d.platform)
-    ? `node -e "fetch('${url}').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`
-    : `curl -fsS ${url} || exit 1`;
   return {
     app,
     platform: d.platform,
     port: d.port,
     ...(d.version ? { [d.platform]: { version: d.version } } : {}),
     // Liara keeps the old release serving until this passes (zero-downtime deploys).
-    ...(healthPath ? { healthCheck: { command, interval: 30, timeout: 10, retries: 3, startPeriod: 20 } } : {}),
+    ...(healthPath ? { healthCheck: healthCheckFor(d.port, healthPath) } : {}),
   };
 }
 

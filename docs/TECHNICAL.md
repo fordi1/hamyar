@@ -56,7 +56,7 @@ flowchart LR
   AG --> CORE
   MCP --> CORE
   subgraph CORE[core library]
-    POL[policy.ts<br/>risk tiers, confirm tokens,<br/>rate limits, audit]
+    POL[policy.ts + approvals.ts<br/>risk tiers, human approvals,<br/>rate limits, audit]
     CL[liara-client.ts]
     DET[detect.ts / env-scan.ts / plan-advisor.ts]
     DEP[deployer.ts]
@@ -79,7 +79,9 @@ hamyar/
     plan-advisor.ts     Recommend a plan with reason and price
     deployer.ts         Pack → upload → release → poll → verify → auto-rollback
     liara-json.ts       Generate a liara.json (with healthCheck)
-    policy.ts           Risk tiers, confirm tokens, rate limits, audit log
+    policy.ts           Risk tiers, rate limits, audit log
+    approvals.ts        Persistent approval requests decided only through trusted human channels
+    operations.ts       Persisted operations, resume after restart
     redact.ts           Mask secrets before any LLM call or log output
     sre/
       collect.ts        One "snapshot" of everything about an app
@@ -313,9 +315,18 @@ when), verification numbers, prevention suggestions. Downloadable and stored wit
 | T2 | Changes state / costs money | create app, deploy, env update, resize plan, rollback, add domain, turn app off | Preview card (diff, price delta, expected downtime, rollback path) + explicit approve |
 | T3 | Destructive | delete app / disk / database / domain, data writes in DB | **Not implemented as tools.** Agent explains how to do it in the console |
 
-Enforcement is in `policy.ts`, not in prompts: tools of tier ≥ T1 cannot execute without a valid
-**confirm token** that was issued for exactly those arguments (hash of tool + args), is single-use,
-and expires after 10 minutes.
+Enforcement is in code (`core/actions.ts` → `runAction()`, `core/approvals.ts`), not in prompts.
+A tool of tier ≥ T1 first files an **approval request** in a persistent store shared by the MCP
+server, the dashboard and the terminal (`.hamyar/approvals.json`). It executes only when:
+- a human decided it through a **trusted channel**: the authenticated dashboard, an MCP elicitation
+  answer, or `npm run approve -- <id>` in an interactive terminal (refused without a TTY, so an
+  agent's own shell cannot approve);
+- the arguments hash to exactly what was approved (salted HMAC over canonical arguments, nested
+  values included);
+- it was not used before, rejected, revoked or older than 10 minutes.
+
+The request id is not a credential: a model that calls back with it before a human approved gets
+"not approved yet" and nothing runs. Secret argument values are never written to the store.
 
 ### 7.2 Approval card contents
 Action in plain Persian · exact arguments · diff (env before/after with values masked, plan
@@ -328,13 +339,48 @@ before/after with price) · expected downtime · cost impact · how to undo · b
 - **خودکار محدود (Auto-safe)**: T0 + T1 auto (restart, SSL); T2 still needs approval.
 
 ### 7.4 Guard rails
-- Rate limits per session: max 3 deploys / 10 min, max 10 write actions / hour, restart at most
-  once per 5 min per app.
+- Rate limits, counted from the shared audit log so MCP and dashboard share one budget: max 3
+  deploys / 10 min, max 10 write actions / hour, restart at most once per 5 min per app.
 - No blind retry of writes; after an ambiguous result the state is re-read.
-- Exec allow-list only (no shell metacharacters, no write commands).
-- DB queries limited to `SELECT` / `EXPLAIN` with `LIMIT`.
-- Kill switch: «توقف» in chat cancels pending tool calls and revokes all confirm tokens.
-- Audit log (`audit.jsonl`): timestamp, actor, tool, tier, args (redacted), approval id, result.
+- Kill switch: «توقف» revokes every pending and approved-but-unused request.
+- After a dashboard restart, dashboard-filed requests (whose agent run died with the process) are
+  revoked with a reason; MCP-filed ones stay.
+- Audit log (`audit.jsonl`): timestamp, tool, tier, args (secrets masked), approval id, who approved
+  and through which channel, outcome (previewed / approved / executed / failed / rejected / blocked / revoked).
+- Operations (`.hamyar/operations.json`): every executed change and its state transitions, so the
+  dashboard shows them after a refresh and an in-flight deploy with a release id is followed to the
+  end and verified after a restart; anything else is marked INTERRUPTED with an explanation.
+
+### 7.4.1 Dashboard security (`web/security.ts`)
+- No password → listens on 127.0.0.1 only. With `HAMYAR_DASHBOARD_PASSWORD` (12+ characters, else
+  the server refuses to start) → HttpOnly, SameSite=Strict, Secure session cookie; sessions expire
+  after 1 h idle / 8 h total; `POST /api/logout`.
+- Login brute force: 5 failures per address per 15 minutes, then HTTP 429.
+- CSRF: every state-changing request must be same-origin (Origin check) and `application/json`.
+- Headers on every response: strict CSP (`default-src 'self'`, no third-party origins, font
+  self-hosted), `X-Frame-Options: DENY`, `nosniff`, `no-referrer`.
+- `web/public/dev-sim.js` is served only with `HAMYAR_DEV=1`.
+- Model input is redacted: JWTs, provider keys (`sk-`, `box-ai-`, `ghp_`, AWS, Slack), `key=value`
+  secrets, passwords in URLs, emails, IPs, and the selected app's own env values. MCP tool output is
+  redacted the same way.
+
+### 7.4.2 Deployment states and verification (`core/deployer.ts`)
+`PREPARING → UPLOADING → BUILDING → DEPLOYING → VERIFYING → VERIFIED_HEALTHY | HEALTH_FAILED`, or
+`FAILED` / `CANCELED` (`ANALYZING` and `AWAITING_APPROVAL` precede it in the caller). A release
+that Liara marks READY becomes VERIFIED_HEALTHY only after three probe rounds pass on the detected
+health path and Liara reports the new release as current; otherwise HEALTH_FAILED with the measured
+reason. When the project has a health route, the release carries Liara's documented `healthCheck`
+(`CMD curl --fail http://localhost:<port><path> || exit 1`, the docs' example timings), so Liara keeps
+the previous release serving until it passes (`HAMYAR_HEALTHCHECK=off` disables it). A first deploy
+sets the required env vars before releasing; if anything fails after the app was created, the user
+is told the app exists and is billed.
+
+### 7.4.3 Rollback (`rollback` action)
+Validates the target against the last 20 releases (exists, READY, not current), then tries Liara's
+rollback endpoint (not in the official spec). Only if that endpoint answers 404/405 does it republish
+the target release's stored source through the official releases endpoint, when the release exposes
+a source id. Either way the result is verified like a deploy. If neither path is possible, the user
+is told to redeploy the last good code from the project folder. **Unverified on a live app.**
 
 ### 7.5 Limits disclosed to the user
 Shown in the dashboard «محدودیت‌ها» panel and in the README:
@@ -425,13 +471,14 @@ not depend on them: approval is enforced server-side in `core/actions.ts` → `r
 1. If the client supports MCP *elicitation*, the server shows the preview **to the human** and asks
    «اجرا شود؟» with an optional rejection reason. The model cannot answer this form. A rejection is
    audited and the reason is returned to the model so it can propose something else.
-2. Otherwise the first call returns the preview plus a single-use confirm token (bound to a hash of
-   the exact arguments, 10-minute TTL). The model must show the preview, get an explicit yes, and
-   call again with the token; any argument change or reuse is blocked. The client's own tool
-   permission prompt adds a second human checkpoint.
+2. Otherwise the first call files an approval request and returns its id with the instruction to
+   approve it in the dashboard or with `npm run approve -- <id>`. The model never receives
+   anything that authorizes execution; calling back with the id before a human approved returns
+   "not approved yet".
 
-Verified end to end with a real MCP client (`npm run mcp-smoke`): preview → mismatched args blocked
-→ executed → token reuse blocked → elicitation "no" recorded with reason → elicitation "yes" executed.
+Verified end to end with a real MCP client (`npm run mcp-smoke`): request filed → model calls back
+unapproved, nothing runs → human approves → different args blocked → same args executed → reuse
+blocked → elicitation "no" recorded with reason → elicitation "yes" executed.
 
 **Connecting**: `hamyar/.mcp.json` registers the server for Claude Code when the `hamyar` folder is
 opened; any MCP client can run `npx tsx mcp/server.ts` from the `hamyar` folder.

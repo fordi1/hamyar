@@ -15,6 +15,7 @@ import { LiaraClient } from '../core/liara-client.js';
 import { Policy } from '../core/policy.js';
 import { runAction } from '../core/actions.js';
 import * as ops from '../core/ops.js';
+import { createRedactor } from '../core/redact.js';
 import type { DeployEvent } from '../core/deployer.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,7 +24,7 @@ config({ path: join(root, '.env'), quiet: true });
 
 const ctx: ops.OpsContext = {
   client: LiaraClient.fromEnv(),
-  policy: new Policy({ mode: Policy.fromEnv().mode, auditPath: process.env.HAMYAR_AUDIT_PATH || join(root, 'audit.jsonl') }),
+  policy: Policy.fromEnv(root),
   boards: new Map(),
 };
 const { policy } = ctx;
@@ -37,7 +38,7 @@ const server = new McpServer(
       'Reply to the user in Persian. Keep tool output (previews, boards) intact when you show it.',
       'Flow for a new project: analyze_project → show the plan → launch_app. For an existing app: deploy.',
       'Flow for an incident ("site is slow", "500 error"): diagnose → explain the root cause citing evidence ids (E1…) → propose the first fix → after the fix, verify → incident_report.',
-      'Change tools (deploy, set_env, restart_app, resize_plan, rollback, …) need human approval. If a tool returns a preview with a confirmToken, show the preview to the user, wait for an explicit yes, then call the SAME tool with the SAME arguments plus confirmToken. Never invent approval.',
+      'Change tools (deploy, set_env, restart_app, resize_plan, rollback, …) need human approval through a trusted channel. If a tool returns an approval request number, show the preview and tell the user to approve it in the Hamyar dashboard or by running `npm run approve -- <number>` in their own terminal. Only after the user says they approved, call the SAME tool with the SAME arguments plus approvalId. You cannot approve on the user\'s behalf; an unapproved approvalId is refused.',
       'Never ask the user to paste secret values into chat. For env values use set_env with envFile + keys so values are read from a local file.',
       'If diagnose returns a code fix, edit the code at the given file:line yourself, then call deploy, then verify.',
       'Deleting apps, disks, databases or domains is intentionally unsupported; tell the user to do it in the Liara console.',
@@ -47,23 +48,34 @@ const server = new McpServer(
 
 const text = (t: string, isError = false) => ({ content: [{ type: 'text' as const, text: t }], ...(isError ? { isError: true } : {}) });
 
-async function safely(fn: () => Promise<string>) {
+// Tool output goes to the client model: mask secrets, including the app env values.
+async function safely(fn: () => Promise<string>, app?: string) {
   try {
-    return text(await fn());
+    return text(createRedactor(await ops.secretValues(ctx, app)).mask(await fn()));
   } catch (err: any) {
     return text(`❌ ${err?.explanation ?? err?.message ?? String(err)}`, true);
   }
 }
 
 // Shared handler for every change tool.
-async function change(tool: string, args: Record<string, any>, confirmToken?: string) {
+async function change(tool: string, args: Record<string, any>, approvalId?: string) {
   const events: DeployEvent[] = [];
   const onEvent = (e: DeployEvent) => {
     events.push(e);
     server.sendLoggingMessage({ level: 'info', data: `${tool}: ${e.phase}${e.message ? ` (${e.message})` : ''}` }).catch(() => {});
   };
 
-  const first = await runAction(ctx, tool, args, confirmToken ? { token: confirmToken, approvedBy: 'user (chat)' } : undefined, onEvent);
+  if (approvalId) {
+    // The model calls back after the user said they approved; the store decides if that is true.
+    const pending = policy.approvals.get(approvalId);
+    if (pending?.status === 'pending') {
+      return text(`⏳ درخواست ${pending.id} هنوز تأیید نشده است. کاربر باید آن را در داشبورد همیار یا با «npm run approve -- ${pending.id}» در ترمینال خودش تأیید کند.`);
+    }
+    const done = await runAction(ctx, tool, args, { approvalId }, onEvent, 'mcp');
+    return done.status === 'done' ? text(ops.renderDone(tool, done.result, events)) : text(`❌ ${'error' in done ? done.error : done.status}`, true);
+  }
+
+  const first = await runAction(ctx, tool, args, undefined, onEvent, 'mcp');
   if (first.status === 'done') return text(ops.renderDone(tool, first.result, events));
   if (first.status !== 'needs_approval') return text(`❌ ${first.error}`, true);
 
@@ -80,24 +92,30 @@ async function change(tool: string, args: Record<string, any>, confirmToken?: st
         required: ['approve'],
       },
     });
-    if (answer.action === 'accept' && answer.content?.approve === true) {
-      const done = await runAction(ctx, tool, args, { token: first.token, approvedBy: 'user (elicitation)' }, onEvent);
+    // The elicitation answer comes from the human in the client UI, not from the model.
+    const approved = answer.action === 'accept' && answer.content?.approve === true;
+    const reason = (answer.content?.reason as string) || (answer.action === 'cancel' ? 'لغو شد' : approved ? undefined : 'بدون دلیل');
+    policy.approvals.decide(first.approvalId, { approved, by: 'user', channel: 'mcp-elicitation', reason });
+    if (approved) {
+      const done = await runAction(ctx, tool, args, { approvalId: first.approvalId }, onEvent, 'mcp');
       return done.status === 'done' ? text(ops.renderDone(tool, done.result, events)) : text(`❌ ${'error' in done ? done.error : done.status}`, true);
     }
-    const reason = (answer.content?.reason as string) || (answer.action === 'cancel' ? 'لغو شد' : 'بدون دلیل');
-    policy.audit({ tool, tier: first.tier, args, outcome: 'rejected', approvedBy: 'user (elicitation)', detail: reason });
+    policy.audit({ tool, tier: first.tier, args, outcome: 'rejected', approvedBy: 'user (mcp-elicitation)', approvalId: first.approvalId, detail: reason });
     return text(`🚫 کاربر این عملیات را رد کرد. دلیل: ${reason}\nراه دیگری پیشنهاد بده یا از کاربر بپرس چه می‌خواهد.`);
   }
 
+  // No trusted channel inside this client: hand the decision to the dashboard or the terminal.
   return text(
     `${preview}\n\n` +
-      `کد تأیید: ${first.token} (یک‌بار مصرف، ۱۰ دقیقه، فقط برای همین آرگومان‌ها)\n` +
-      `این پیش‌نمایش را به کاربر نشان بده و صریحاً تأیید بگیر. فقط بعد از «بله» همین ابزار را با همین آرگومان‌ها و confirmToken="${first.token}" دوباره صدا بزن.`,
+      `📝 درخواست تأیید ${first.approvalId} ثبت شد (۱۰ دقیقه اعتبار).\n` +
+      `کاربر باید خودش تأیید کند: در داشبورد همیار (بخش «در انتظار تأیید») یا با دستور زیر در ترمینال خودش:\n` +
+      `npm run approve -- ${first.approvalId}\n` +
+      `بعد از اینکه کاربر گفت تأیید کرده، همین ابزار را با همین آرگومان‌ها و approvalId="${first.approvalId}" صدا بزن. این شماره به‌تنهایی اجازه‌ی اجرا نیست.`,
   );
 }
 
 const app = z.string().describe('Liara app name, e.g. "broken-shop"');
-const confirmToken = z.string().optional().describe('Single-use token from the preview; only after the user explicitly approved');
+const approvalId = z.string().optional().describe('Approval request number, only after the user approved it in the dashboard or terminal');
 const readOnly = { readOnlyHint: true, openWorldHint: true } as const;
 
 // ---------- read-only tools (T0) ----------
@@ -120,14 +138,14 @@ server.registerTool('app_status', {
   description: 'Current status, plan, release, env var names and a live HTTP probe of the app.',
   inputSchema: { app },
   annotations: readOnly,
-}, ({ app: name }) => safely(() => ops.appStatus(ctx, name)));
+}, ({ app: name }) => safely(() => ops.appStatus(ctx, name), name));
 
 server.registerTool('get_logs', {
   title: 'Recent logs, clustered',
   description: 'Runtime logs of the last N minutes grouped into patterns with counts (errors first).',
   inputSchema: { app, minutes: z.number().int().min(1).max(1440).default(30), errorsOnly: z.boolean().default(false) },
   annotations: readOnly,
-}, ({ app: name, minutes, errorsOnly }) => safely(() => ops.logsText(ctx, name, minutes, errorsOnly)));
+}, ({ app: name, minutes, errorsOnly }) => safely(() => ops.logsText(ctx, name, minutes, errorsOnly), name));
 
 server.registerTool('diagnose', {
   title: 'Investigate an incident (SRE)',
@@ -139,28 +157,28 @@ server.registerTool('diagnose', {
     minutes: z.number().int().min(5).max(360).default(30),
   },
   annotations: readOnly,
-}, ({ app: name, dir, path, minutes }) => safely(async () => (await ops.diagnoseText(ctx, name, { dir, path, minutes })).text));
+}, ({ app: name, dir, path, minutes }) => safely(async () => (await ops.diagnoseText(ctx, name, { dir, path, minutes })).text, name));
 
 server.registerTool('verify', {
   title: 'Verify a fix',
   description: 'Probes the site a few times and compares with targets fixed before the change (and with the last diagnose). Use after every fix.',
   inputSchema: { app, path: z.string().optional() },
   annotations: readOnly,
-}, ({ app: name, path }) => safely(async () => (await ops.verifyText(ctx, name, path)).text));
+}, ({ app: name, path }) => safely(async () => (await ops.verifyText(ctx, name, path)).text, name));
 
 server.registerTool('check_domain', {
   title: 'Domain setup guide and status',
   description: 'Step-by-step domain status: what Liara sees, whether the domain uses Liara DNS, which records are visible on public DNS, the exact records or nameservers to set at the registrar (e.g. IRNIC), and the next tool to call. With a domain that is not added yet, returns the full setup steps.',
   inputSchema: { app, domain: z.string().optional() },
   annotations: readOnly,
-}, ({ app: name, domain }) => safely(() => ops.checkDomainText(ctx, name, domain)));
+}, ({ app: name, domain }) => safely(() => ops.checkDomainText(ctx, name, domain), name));
 
 server.registerTool('incident_report', {
   title: 'Incident report (postmortem)',
   description: 'Persian markdown report from the last diagnose and the actions taken since, including approvals and verification.',
   inputSchema: { app },
   annotations: { readOnlyHint: true },
-}, ({ app: name }) => safely(() => ops.incidentReportText(ctx, name)));
+}, ({ app: name }) => safely(() => ops.incidentReportText(ctx, name), name));
 
 server.registerTool('audit_log', {
   title: 'Audit log',
@@ -174,22 +192,24 @@ server.registerTool('audit_log', {
 const changeTool = (name: string, title: string, description: string, shape: Record<string, z.ZodTypeAny>, destructive = false) =>
   server.registerTool(name, {
     title,
-    description: `${description} Requires human approval: first call returns a preview.`,
-    inputSchema: { ...shape, confirmToken },
+    description: `${description} Requires human approval: the first call files an approval request the user approves in the dashboard or terminal.`,
+    inputSchema: { ...shape, approvalId },
     annotations: { readOnlyHint: false, destructiveHint: destructive, openWorldHint: true },
   }, (async (input: Record<string, any>) => {
     try {
-      const { confirmToken: token, ...args } = input;
+      const { approvalId: id, ...args } = input;
       if (typeof args.dir === 'string') args.dir = resolve(args.dir);
       if (typeof args.envFile === 'string') args.envFile = resolve(args.envFile);
-      return await change(name, args, token);
+      return await change(name, args, id);
     } catch (err: any) {
       return text(`❌ ${err?.explanation ?? err?.message ?? String(err)}`, true);
     }
   }) as any);
 
-changeTool('launch_app', 'Create app and first deploy', 'Creates a Liara app on the given plan and deploys the folder.', {
+changeTool('launch_app', 'Create app and first deploy', 'Creates a Liara app on the given plan, sets the env vars the code needs (read from a local file so values never pass through chat), then deploys and verifies.', {
   app, dir: z.string().describe('Absolute path of the project folder'), planID: z.string().describe('Plan id from analyze_project'),
+  envFile: z.string().optional().describe('Local .env file to read the values from'),
+  keys: z.array(z.string()).optional().describe('Env var names to read from envFile and set before the deploy'),
 });
 changeTool('deploy', 'Deploy a new version', 'Packs the folder (never uploads .env files), uploads, builds, follows the build and probes the site.', {
   app, dir: z.string(), port: z.number().int().optional(), message: z.string().optional(),

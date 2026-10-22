@@ -43,7 +43,8 @@ async function deploy(dir: string, message: string) {
   const result = await deploySource(client, { app, dir, platform: d.platform, port: d.port, message }, (e) =>
     console.log(`  ${e.phase}${e.message ? ` (${e.message})` : ''}${e.line ? `: ${e.line.slice(0, 100)}` : ''}`),
   );
-  console.log(`release ${result.releaseID}: ${result.release.state}${result.probe ? `, probe ok ${Math.round(result.probe.okRatio * 100)}% p95 ${result.probe.p95}ms` : ''}`);
+  const v = result.verification;
+  console.log(`release ${result.releaseID}: ${result.state}${v ? `, ok ${Math.round(v.okRatio * 100)}% p95 ${v.p95}ms${v.reason ? ` — ${v.reason}` : ''}` : ''}`);
 }
 
 switch (command) {

@@ -1,8 +1,11 @@
-// Human-in-the-loop enforcement. Risk tiers, single-use confirm tokens bound to
-// the exact tool + arguments, rate limits and an append-only audit log.
-// This is code, not a prompt: a model cannot talk its way past it.
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
-import { createHash, randomBytes } from 'node:crypto';
+// Human-in-the-loop enforcement: risk tiers, the shared approval store, rate limits
+// and an append-only audit log. This is code, not a prompt: a model cannot talk its
+// way past it. Approvals live in ApprovalStore (core/approvals.ts) so the MCP server,
+// the dashboard and the terminal approve the same requests.
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { ApprovalStore, maskSecrets } from './approvals.js';
+import { OperationStore } from './operations.js';
 
 export type Tier = 'T0' | 'T1' | 'T2' | 'T3';
 export type Mode = 'observe' | 'review' | 'auto-safe';
@@ -17,60 +20,35 @@ export interface AuditEntry {
   tool: string;
   tier: Tier;
   args: Record<string, unknown>;
-  outcome: 'previewed' | 'executed' | 'failed' | 'rejected' | 'blocked';
+  outcome: 'previewed' | 'approved' | 'executed' | 'failed' | 'rejected' | 'blocked' | 'revoked';
   approvedBy?: string;
+  approvalId?: string;
   detail?: string;
 }
 
-interface Issued {
-  tool: string;
-  argsHash: string;
-  expiresAt: number;
-  used: boolean;
-}
-
-const TOKEN_TTL = 10 * 60_000;
-// Argument names whose values are secrets and must never be written to the audit log.
-const SECRET_KEYS = /value|password|secret|token|key_value|url$/i;
-
-// Key order must not matter, at any depth.
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical((value as any)[k])]));
-  }
-  return value;
-}
-
-function hashArgs(args: Record<string, unknown>): string {
-  return createHash('sha256').update(JSON.stringify(canonical(args))).digest('hex');
-}
-
-function mask(value: unknown, key = ''): unknown {
-  if (key && key !== 'key' && SECRET_KEYS.test(key)) return '***';
-  if (Array.isArray(value)) return value.map((v) => mask(v));
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mask(v, k)]));
-  return value;
-}
-
-const maskArgs = (args: Record<string, unknown>) => mask(args) as Record<string, unknown>;
-
 export class Policy {
   readonly mode: Mode;
-  private tokens = new Map<string, Issued>();
-  private history: { tool: string; app?: string; at: number }[] = [];
+  readonly approvals: ApprovalStore;
+  readonly operations: OperationStore;
   private auditPath: string;
   private now: () => number;
 
-  constructor(opts: { mode?: Mode; auditPath?: string; now?: () => number } = {}) {
+  constructor(opts: { mode?: Mode; auditPath?: string; approvalsPath?: string; now?: () => number } = {}) {
     this.mode = opts.mode ?? 'review';
     this.auditPath = opts.auditPath ?? 'audit.jsonl';
     this.now = opts.now ?? Date.now;
+    const approvalsPath = opts.approvalsPath ?? join(dirname(this.auditPath), '.hamyar', 'approvals.json');
+    this.approvals = new ApprovalStore({ path: approvalsPath, now: this.now });
+    this.operations = new OperationStore({ path: join(dirname(approvalsPath), 'operations.json') });
   }
 
-  static fromEnv(): Policy {
+  static fromEnv(root = '.'): Policy {
     const mode = (process.env.HAMYAR_MODE as Mode) || 'review';
-    return new Policy({ mode: ['observe', 'review', 'auto-safe'].includes(mode) ? mode : 'review', auditPath: process.env.HAMYAR_AUDIT_PATH });
+    return new Policy({
+      mode: ['observe', 'review', 'auto-safe'].includes(mode) ? mode : 'review',
+      auditPath: process.env.HAMYAR_AUDIT_PATH || join(root, 'audit.jsonl'),
+      approvalsPath: process.env.HAMYAR_STATE_DIR ? join(process.env.HAMYAR_STATE_DIR, 'approvals.json') : join(root, '.hamyar', 'approvals.json'),
+    });
   }
 
   needsApproval(tier: Tier): boolean {
@@ -86,46 +64,33 @@ export class Policy {
     }
   }
 
-  issue(tool: string, args: Record<string, unknown>): { token: string; expiresAt: number } {
-    const token = randomBytes(4).toString('hex');
-    const expiresAt = this.now() + TOKEN_TTL;
-    this.tokens.set(token, { tool, argsHash: hashArgs(args), expiresAt, used: false });
-    return { token, expiresAt };
+  // Kill switch: every pending or approved-but-unused request becomes revoked.
+  revokeAll(reason = 'لغو با دکمه‌ی توقف'): number {
+    const n = this.approvals.revokeAll(reason);
+    if (n) this.audit({ tool: '*', tier: 'T2', args: {}, outcome: 'revoked', detail: `${n} درخواست لغو شد: ${reason}` });
+    return n;
   }
 
-  consume(tool: string, args: Record<string, unknown>, token: string): void {
-    const t = this.tokens.get(token);
-    if (!t) throw new PolicyError('کد تأیید نامعتبر است؛ اول پیش‌نمایش را بگیرید و بعد از تأیید کاربر اجرا کنید.');
-    if (t.used) throw new PolicyError('این کد تأیید قبلاً استفاده شده است؛ برای اجرای دوباره، پیش‌نمایش جدید بگیرید.');
-    if (this.now() > t.expiresAt) throw new PolicyError('کد تأیید منقضی شده است (بیش از ۱۰ دقیقه)؛ پیش‌نمایش جدید بگیرید.');
-    if (t.tool !== tool) throw new PolicyError(`این کد تأیید برای «${t.tool}» صادر شده، نه «${tool}».`);
-    if (t.argsHash !== hashArgs(args)) throw new PolicyError('آرگومان‌ها با چیزی که کاربر تأیید کرد فرق دارند؛ پیش‌نمایش جدید بگیرید.');
-    t.used = true;
-  }
-
-  revokeAll(): void {
-    this.tokens.clear();
-  }
-
+  // Counted from the shared audit log, so MCP and dashboard processes share one budget.
   assertRate(tool: string, app?: string): void {
     const now = this.now();
-    const count = (pred: (h: { tool: string; app?: string; at: number }) => boolean, windowMs: number) =>
-      this.history.filter((h) => now - h.at < windowMs && pred(h)).length;
+    const executed = this.recent(500).filter((e) => e.outcome === 'executed');
+    const count = (pred: (e: AuditEntry) => boolean, windowMs: number) => executed.filter((e) => now - Date.parse(e.at) < windowMs && pred(e)).length;
 
-    if (['deploy', 'launch_app'].includes(tool) && count((h) => ['deploy', 'launch_app'].includes(h.tool), 10 * 60_000) >= 3) {
+    if (['deploy', 'launch_app'].includes(tool) && count((e) => ['deploy', 'launch_app'].includes(e.tool), 10 * 60_000) >= 3) {
       throw new PolicyError('در ۱۰ دقیقه‌ی اخیر ۳ دیپلوی انجام شده؛ برای جلوگیری از اشتباه زنجیره‌ای، کمی صبر کنید.');
     }
-    if (tool === 'restart_app' && count((h) => h.tool === 'restart_app' && h.app === app, 5 * 60_000) >= 1) {
+    if (tool === 'restart_app' && count((e) => e.tool === 'restart_app' && e.args?.app === app, 5 * 60_000) >= 1) {
       throw new PolicyError('این برنامه در ۵ دقیقه‌ی اخیر ری‌استارت شده؛ ری‌استارت پشت‌سرهم مشکل را حل نمی‌کند.');
     }
     if (count(() => true, 60 * 60_000) >= 10) {
       throw new PolicyError('در یک ساعت اخیر ۱۰ تغییر انجام شده؛ سقف ایمنی پر شده است.');
     }
-    this.history.push({ tool, app, at: now });
   }
 
   audit(entry: AuditEntry): void {
-    const line = { at: new Date(this.now()).toISOString(), mode: this.mode, ...entry, args: maskArgs(entry.args) };
+    const line = { at: new Date(this.now()).toISOString(), mode: this.mode, ...entry, args: maskSecrets(entry.args) };
+    mkdirSync(dirname(this.auditPath), { recursive: true });
     appendFileSync(this.auditPath, JSON.stringify(line) + '\n');
   }
 
